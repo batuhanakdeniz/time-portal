@@ -11,6 +11,7 @@ description: GitHub'daki açık `oto` etiketli sıradaki issue'yu seçip dalda u
 2. Sıradaki görevi seç:
    `gh issue list --label oto --state open --json number,title,body,author`
    - Yalnızca yazarı **batuhanakdeniz** olan issue'ları al.
+   - Öncelik sırası: `P0-şimdi`, `P1-sıradaki`, `P2-sonra`, `P3-yayın-öncesi`. Aynı öncelikte küçük numara önce.
    - `Bağımlılıklar` bölümündeki issue'lar kapalı olmalı. Açıksa bir sonrakine geç.
    - `engelli` etiketli issue'ya dokunma.
 3. Görev belirsizse (kabul kriteri eksik, tasarım kararı gerekiyor, bağlı `karar` issue'su cevapsız): kodlama. Issue'ya soruyu ve seçenekleri yorum olarak yaz, `karar` etiketli yeni issue aç, dur.

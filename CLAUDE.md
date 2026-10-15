@@ -30,7 +30,7 @@ Tek doğru kaynak GitHub'dır. Sohbet, pano ya da yerel dosya durum tutmaz.
 
 1. **Issue = görev.** Etiketler: `oto` (ajan alır), `insan` (karar/anahtar/tasarım gerekir), `karar` (sahibinin cevabı bekleniyor), `engelli` (ajan takıldı).
 2. **Karar = `karar` etiketli issue.** Sahibi issue'ya "A" / "B" yazarak yanıtlar (telefondan da). Cevap gelmeden o karara bağlı iş başlamaz.
-3. **Ajan yalnızca `oto` etiketli, açık ve bağımlılıkları kapanmış issue'yu alır**, ve yalnızca sahibinin açtığı issue'ları.
+3. **Ajan yalnızca `oto` etiketli, açık ve bağımlılıkları kapanmış issue'yu alır**, ve yalnızca sahibinin açtığı issue'ları. Sıra öncelik etiketine göredir: `P0-şimdi` → `P1-sıradaki` → `P2-sonra` → `P3-yayın-öncesi`; aynı öncelikte küçük issue numarası önce gelir.
 4. **Ajan `main`'e doğrudan push etmez.** `auto/<issue-no>-<kısa-ad>` dalı açar, taslak PR'a `Closes #N` yazar.
 5. **PR'ı CI ve reviewer ajan inceler**, sahibi birleştirir. Birleştirme her zaman sahibine aittir.
 6. **Sıradaki iş** ancak PR birleştikten sonra başlar.
