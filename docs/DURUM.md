@@ -16,6 +16,16 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 - **Üretim akışı asenkron:** İstek bir iş (job) oluşturur, durum sorgulanır, sonuç saklanır. Üretim saniyeler-dakikalar sürebilir.
 - **Önbellek:** Aynı (yaklaşık konum hücresi, tarih dilimi) için sonuç yeniden üretilmez.
 
+## Orkestrasyon kararları
+
+- **Merkez GitHub:** Issue = görev, PR = onay kapısı, CI = test kapısı. Telefondan da bilgisayardan da aynı yerden yönetilir, kod her durumda aynı depoya gider.
+- **Depo:** `batuhanakdeniz/time-portal`, private.
+- **Yürütücü:** Claude Code routines (bulut). Zamanlı ve/veya GitHub olayıyla tetiklenir. Kurulum #13'te.
+- **Kapılar:** CI yeşil + reviewer ajan + sahibinin birleştirmesi. Ajan `main`'e doğrudan yazmaz.
+- **Korunan yollar:** `.github/`, `.claude/`, `CLAUDE.md` (CODEOWNERS).
+- **Pano:** Claude artifact panosu emekli edildi, tek doğru kaynak GitHub.
+- **Dış girdi:** Ajan yalnızca sahibinin açtığı issue'lardan tetiklenir.
+
 ## Boru hattı
 
 ```
@@ -30,13 +40,13 @@ tarih + konum
 
 ## Açık kararlar (insan kararı gerekir)
 
-1. Panorama ve derinlik için hangi servis/model? (maliyet, kalite, lisans karşılaştırılmalı)
-2. Barındırma ve yapıt depolama (yerel dosya, nesne depolama).
-3. Maliyet sınırı: kullanıcı başına/gün üretim kotası.
-4. İçerik güvenliği: istem filtreleme ve moderasyon.
-5. Tarihsel doğruluk için kullanıcıya gösterilecek uyarı ("yapay zekayla yorumlanmış").
-6. Zaman çizgisi ve konum seçim ekranlarının tasarımı (önce sor).
-7. Kimlik doğrulama gerekecek mi?
+Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
+
+1. Panorama ve derinlik servisi: #17
+2. API sözleşmesi biçimi: #14
+3. Zaman çizgisi tasarımı: #15
+4. Konum seçici: #16
+5. Henüz issue'su olmayanlar: barındırma ve yapıt depolama, kimlik doğrulama gerekecek mi, tarihsel doğruluk uyarısı metni, kota eşikleri (#11), moderasyon yaklaşımı (#12).
 
 ## Riskler
 
@@ -47,4 +57,5 @@ tarih + konum
 
 ## Sıradaki adım
 
-Faz 2: yürüyen iskelet. `docs/BACKLOG.md` içindeki ilk görevlerden başla.
+1. Sahibi #14'e (API sözleşmesi) cevap verir, #13'teki routine kurulumunu yapar.
+2. Ardından ajan #3'ü (sahte üretici ve iş akışı) `auto/3-...` dalında alır.

@@ -1,50 +1,27 @@
 # Görev kuyruğu
 
-Durumlar: `todo` / `doing` / `done` / `blocked`. Otomasyon yalnızca **[oto]** işaretli görevleri alır. **[insan]** görevler karar ya da gerçek anahtar/veri ister, ajan bunları kodlamaz, `docs/SORULAR.md`'ye yazar.
+Görevler artık **GitHub Issues**'ta: https://github.com/batuhanakdeniz/time-portal/issues
 
-## Faz 2: Yürüyen iskelet
+Bu dosya yalnızca yön gösterir, durum burada tutulmaz (iki yerde tutulan durum sapar).
 
-### 1. Backend iskeleti — `done` [oto]
-Spring Boot (Java 25) projesi, `/api/health`, test altyapısı.
-**Kabul:** `backend/` içinde `./mvnw test` yeşil, `GET /api/health` 200 döner.
+```bash
+gh issue list --label oto      # ajanın alabileceği işler
+gh issue list --label karar    # senden bekleyen kararlar
+gh issue list --label engelli  # ajanın takıldığı işler
+```
 
-### 2. Frontend iskeleti — `done` [oto]
-Vite + React + TypeScript, Three.js bağımlılıkları, `/api` proxy'si.
-**Kabul:** `frontend/` içinde `npm run build` ve `npm test` yeşil.
-
-### 3. Sahte üretici ve iş akışı — `todo` [oto]
-`SceneGenerator` arayüzü, örnek panorama dönen `FakeSceneGenerator`, `POST /api/scenes` (iş oluşturur), `GET /api/scenes/{id}` (durum + sonuç).
-**Kabul:** iş `PENDING → READY` olur, sonuç örnek panorama ve derinlik yolunu içerir. Birim ve entegrasyon testi var.
-
-### 4. 360° görüntüleyici — `todo` [oto]
-Örnek panoramayı küre içinde gösteren, fare/dokunmayla bakış yönünü değiştiren bileşen.
-**Kabul:** bileşen testi, yatay 360° dönüş, dikey açı sınırlı.
-
-### 5. Derinlikli sınırlı hareket — `todo` [oto]
-Derinlik haritasıyla paralaks/mesh, kamera hareketi küçük bir yarıçapla sınırlı (ileri-geri).
-**Kabul:** hareket sınırı birim testle doğrulanır, sınır dışına çıkılamaz.
-
-### 6. Zaman çizgisi bileşeni — `todo` [insan]
-Doğrusal olmayan ölçek, MÖ/MS yıl desteği, tarih seçimi.
-**Karar:** görsel tasarım ve ölçek önce sorulur.
-
-### 7. Konum seçici — `todo` [insan]
-Harita ya da küre üzerinde konum seçimi.
-**Karar:** harita kütüphanesi ve etkileşim tasarımı önce sorulur.
-
-## Faz 3: Gerçek üretim
-
-### 8. Gerçek üretici adaptörü — `todo` [insan]
-Servis seçimi (DURUM.md açık karar 1), API anahtarı, adaptör.
-
-### 9. PromptComposer — `todo` [oto]
-Konum ve tarihten sahne tarifi üreten bileşen. LLM çağrısı arayüz arkasında, testte sahte.
-
-### 10. Önbellek — `todo` [oto]
-Konum hücresi + tarih dilimi anahtarıyla sonuç yeniden kullanımı.
-
-### 11. Hız sınırı ve kota — `todo` [insan]
-Eşik değerleri kullanıcıdan alınır (DURUM.md açık karar 3).
-
-### 12. İçerik güvenliği — `todo` [insan]
-Moderasyon yaklaşımı (açık karar 4).
+| # | Görev | Etiket |
+|---|---|---|
+| 1-2 | Backend ve frontend iskeleti | kapandı |
+| 3 | Sahte üretici ve iş akışı | oto |
+| 4 | 360° görüntüleyici | oto |
+| 5 | Derinlikli sınırlı hareket | oto |
+| 6 | Zaman çizgisi bileşeni | insan |
+| 7 | Konum seçici | insan |
+| 8 | Gerçek üretici adaptörü | insan |
+| 9 | PromptComposer | oto |
+| 10 | Önbellek | oto |
+| 11 | Hız sınırı ve kota | insan |
+| 12 | İçerik güvenliği | insan |
+| 13 | Routine ve Claude GitHub App kurulumu | insan |
+| 14-17 | Kararlar (API sözleşmesi, zaman çizgisi, konum, servis) | karar |
