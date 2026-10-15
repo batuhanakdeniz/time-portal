@@ -13,8 +13,9 @@ describe('normalizeLongitude', () => {
     expect(normalizeLongitude(190)).toBe(-170)
     expect(normalizeLongitude(-190)).toBe(170)
     expect(normalizeLongitude(360)).toBe(0)
-    expect(normalizeLongitude(-540)).toBe(-180)
-    expect(normalizeLongitude(540)).toBe(-180)
+    expect(normalizeLongitude(-540)).toBe(180)
+    expect(normalizeLongitude(540)).toBe(180)
+    expect(normalizeLongitude(-181)).toBe(179)
   })
 })
 

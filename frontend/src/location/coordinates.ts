@@ -3,10 +3,11 @@ export interface Selection {
   longitude: number
 }
 
-/** Boylamı -180..180 aralığına sarar (180 ve -180 olduğu gibi kalır). */
+/** [-180, 180] içindeki değerler aynen kalır; dışındakiler (-180, 180] aralığına sarılır. */
 export function normalizeLongitude(lng: number): number {
   if (lng >= -180 && lng <= 180) return lng
-  return ((((lng + 180) % 360) + 360) % 360) - 180
+  const wrapped = ((((lng + 180) % 360) + 360) % 360) - 180
+  return wrapped === -180 ? 180 : wrapped
 }
 
 export function clampLatitude(lat: number): number {
