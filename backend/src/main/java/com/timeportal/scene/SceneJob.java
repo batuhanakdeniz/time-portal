@@ -14,6 +14,10 @@ public record SceneJob(
 		String error,
 		Instant createdAt) {
 
+	public static SceneJob pending(String id, SceneRequest request, Instant createdAt) {
+		return new SceneJob(id, request, SceneStatus.PENDING, null, null, createdAt);
+	}
+
 	public SceneJob running() {
 		requireStatus(SceneStatus.PENDING, SceneStatus.RUNNING);
 		return new SceneJob(id, request, SceneStatus.RUNNING, null, null, createdAt);

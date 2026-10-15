@@ -13,7 +13,7 @@ Genel: JSON, UTF-8. Hata gövdesi `{"error": "<mesaj>"}`. Geliştirmede frontend
 | `latitude` | sayı | -90 … 90 |
 | `longitude` | sayı | -180 … 180 |
 
-Üçü de zorunludur. Eksik ya da aralık dışı değer `400` döner.
+Üçü de zorunludur. Eksik, aralık dışı, tamsayı olmayan yıl (`1.5`), bozuk JSON ya da yanlış tür `400` döner. Tüm hatalarda gövde `{"error": "<mesaj>"}` biçimindedir (`404` dahil).
 
 ## `GET /api/health`
 
@@ -67,7 +67,7 @@ Geçişler: `PENDING → RUNNING → READY | FAILED`. İstemci `READY` ya da `FA
 ```
 
 - `panoramaUrl`: equirectangular (2:1) panorama.
-- `depthUrl`: aynı boyutta gri tonlu derinlik haritası. Koyu = uzak, açık = yakın (üretici gerçek servisle değişirse bu not güncellenir).
+- `depthUrl`: aynı boyutta gri tonlu derinlik haritası. Hangi ucun yakın/uzak olduğu gerçek üretici (#8) seçilince netleşir ve burada belirtilir. Örnekte yukarıdan aşağıya koyudan açığa gider.
 - Adresler sunucuya göre köke bağlıdır, doğrudan yüklenebilir.
 
 ## Örnek yapıtlar

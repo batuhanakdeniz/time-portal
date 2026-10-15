@@ -38,17 +38,19 @@ class SceneControllerTest {
 				.andReturn().getResponse().getContentAsString();
 		String id = JsonPath.read(response, "$.id");
 
-		String status = "";
-		for (int i = 0; i < 100 && !"READY".equals(status); i++) {
+		String state = "";
+		long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+		while (System.nanoTime() < deadline) {
 			String json = mockMvc.perform(get("/api/scenes/" + id))
 					.andExpect(status().isOk())
 					.andReturn().getResponse().getContentAsString();
-			status = JsonPath.read(json, "$.status");
-			if (!"READY".equals(status)) {
-				Thread.sleep(20);
+			state = JsonPath.read(json, "$.status");
+			if ("READY".equals(state) || "FAILED".equals(state)) {
+				break;
 			}
+			Thread.sleep(20);
 		}
-		assertThat(status).isEqualTo("READY");
+		assertThat(state).isEqualTo("READY");
 
 		mockMvc.perform(get("/api/scenes/" + id))
 				.andExpect(jsonPath("$.result.panoramaUrl").value("/api/samples/sample-pano.png"))
@@ -81,7 +83,38 @@ class SceneControllerTest {
 	}
 
 	@Test
-	void unknownJobIsNotFound() throws Exception {
-		mockMvc.perform(get("/api/scenes/yok")).andExpect(status().isNotFound());
+	void unknownJobIsNotFoundWithErrorBody() throws Exception {
+		mockMvc.perform(get("/api/scenes/yok"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error").isNotEmpty());
+	}
+
+	@Test
+	void invalidRequestReturnsErrorBody() throws Exception {
+		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(body(2000, 91, 0)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").isNotEmpty());
+	}
+
+	@Test
+	void malformedJsonReturnsErrorBody() throws Exception {
+		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content("{bozuk"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").isNotEmpty());
+	}
+
+	@Test
+	void wrongTypeReturnsErrorBody() throws Exception {
+		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"year\":\"abc\",\"latitude\":1,\"longitude\":1}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").isNotEmpty());
+	}
+
+	@Test
+	void fractionalYearIsRejected() throws Exception {
+		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"year\":1.5,\"latitude\":1,\"longitude\":1}"))
+				.andExpect(status().isBadRequest());
 	}
 }

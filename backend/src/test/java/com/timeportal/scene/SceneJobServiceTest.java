@@ -83,6 +83,20 @@ class SceneJobServiceTest {
 	}
 
 	@Test
+	void errorThrownByGeneratorAlsoMarksJobFailed() {
+		SceneJobService service = new SceneJobService(request -> {
+			throw new NoClassDefFoundError("adapter");
+		}, executor);
+
+		SceneJob created = service.create(REQUEST);
+		executor.runNext();
+
+		SceneJob failed = service.find(created.id()).orElseThrow();
+		assertThat(failed.status()).isEqualTo(SceneStatus.FAILED);
+		assertThat(failed.error()).contains("adapter");
+	}
+
+	@Test
 	void unknownJobIsEmpty() {
 		SceneJobService service = new SceneJobService(request -> RESULT, executor);
 		assertThat(service.find("yok")).isEmpty();
@@ -91,12 +105,16 @@ class SceneJobServiceTest {
 	@Test
 	void eachJobGetsOwnId() {
 		SceneJobService service = new SceneJobService(request -> RESULT, executor);
-		assertThat(service.create(REQUEST).id()).isNotEqualTo(service.create(REQUEST).id());
+		String first = service.create(REQUEST).id();
+		String second = service.create(REQUEST).id();
+		assertThat(first).isNotEqualTo(second);
+		assertThat(service.find(first)).isPresent();
+		assertThat(service.find(second)).isPresent();
 	}
 
 	@Test
 	void illegalTransitionsAreRejected() {
-		SceneJob pending = new SceneJob("a", REQUEST, SceneStatus.PENDING, null, null, java.time.Instant.now());
+		SceneJob pending = SceneJob.pending("a", REQUEST, java.time.Instant.now());
 		assertThatThrownBy(() -> pending.ready(RESULT)).isInstanceOf(IllegalStateException.class);
 		assertThatThrownBy(() -> pending.failed("x")).isInstanceOf(IllegalStateException.class);
 

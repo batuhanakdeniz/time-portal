@@ -29,8 +29,7 @@ public class SceneJobService {
 	}
 
 	public SceneJob create(SceneRequest request) {
-		SceneJob job = new SceneJob(UUID.randomUUID().toString(), request, SceneStatus.PENDING, null, null,
-				Instant.now());
+		SceneJob job = SceneJob.pending(UUID.randomUUID().toString(), request, Instant.now());
 		jobs.put(job.id(), job);
 		executor.execute(() -> run(job.id()));
 		return job;
@@ -45,13 +44,17 @@ public class SceneJobService {
 		if (running == null) {
 			return;
 		}
+		SceneResult result = null;
+		String failure = null;
 		try {
-			SceneResult result = generator.generate(running.request());
-			jobs.computeIfPresent(id, (key, job) -> job.ready(result));
+			result = generator.generate(running.request());
 		}
-		catch (RuntimeException e) {
-			String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-			jobs.computeIfPresent(id, (key, job) -> job.failed(message));
+		catch (Throwable e) {
+			// Error türevleri de dahil: iş asla RUNNING'de takılı kalmamalı.
+			failure = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
 		}
+		SceneResult finalResult = result;
+		String finalFailure = failure;
+		jobs.computeIfPresent(id, (key, job) -> finalFailure == null ? job.ready(finalResult) : job.failed(finalFailure));
 	}
 }
