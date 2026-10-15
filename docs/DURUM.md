@@ -15,6 +15,7 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 - **Frontend:** React + Vite + TypeScript, Three.js (react-three-fiber), konum seçimi için harita/küre bileşeni.
 - **Üretim akışı asenkron:** İstek bir iş (job) oluşturur, durum sorgulanır, sonuç saklanır. Üretim saniyeler-dakikalar sürebilir.
 - **Önbellek:** Aynı (yaklaşık konum hücresi, tarih dilimi) için sonuç yeniden üretilmez.
+- **API sözleşmesi:** Elle yazılan `docs/API.md` (karar #14). Yıl negatifse MÖ, yıl 0 yoktur.
 
 ## Orkestrasyon kararları
 
@@ -43,7 +44,7 @@ tarih + konum
 Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 1. Panorama ve derinlik servisi: #17
-2. API sözleşmesi biçimi: #14
+2. ~~API sözleşmesi biçimi: #14~~ → `docs/API.md` (karar verildi)
 3. Zaman çizgisi tasarımı: #15
 4. Konum seçici: #16
 5. Henüz issue'su olmayanlar: barındırma ve yapıt depolama, kimlik doğrulama gerekecek mi, tarihsel doğruluk uyarısı metni, kota eşikleri (#11), moderasyon yaklaşımı (#12).
