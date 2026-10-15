@@ -60,13 +60,35 @@ export function panView(view: View, delta: number): View {
   return clampView({ start: view.start + delta, end: view.end + delta })
 }
 
+/** Pencerenin en az kaç yıl kapsayacağı (ölçek doğrusal olmadığı için konum değil yıl cinsinden). */
+export const MIN_YEAR_SPAN = 20
+
+/** Penceredeki yıl sayısı (uç yıllar arası fark). */
+export function yearSpan(view: View): number {
+  return positionToYear(view.end) - positionToYear(view.start)
+}
+
 /**
  * Pencereyi `focus` konumu sabit kalacak şekilde ölçekler.
- * factor < 1 yakınlaştırır, > 1 uzaklaştırır.
+ * factor < 1 yakınlaştırır, > 1 uzaklaştırır. Pencere en az MIN_YEAR_SPAN yıl kapsar.
  */
 export function zoomView(view: View, focus: number, factor: number): View {
-  const span = clamp((view.end - view.start) * factor, MIN_SPAN, 1)
-  const ratio = (focus - view.start) / (view.end - view.start)
-  const start = focus - ratio * span
-  return clampView({ start, end: start + span })
+  const oldSpan = view.end - view.start
+  const ratio = (focus - view.start) / oldSpan
+  const build = (span: number): View => {
+    const start = focus - ratio * span
+    return clampView({ start, end: start + span })
+  }
+  const next = build(clamp(oldSpan * factor, MIN_SPAN, 1))
+  if (factor >= 1 || yearSpan(next) >= MIN_YEAR_SPAN) return next
+  if (yearSpan(view) < MIN_YEAR_SPAN) return view
+  // En küçük izinli genişliği ikili aramayla bul.
+  let lo = next.end - next.start
+  let hi = oldSpan
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2
+    if (yearSpan(build(mid)) >= MIN_YEAR_SPAN) hi = mid
+    else lo = mid
+  }
+  return build(hi)
 }

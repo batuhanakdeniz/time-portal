@@ -55,6 +55,14 @@
   color: #9aa3c2;
 }
 
+.timeline-tick-start .timeline-tick-label {
+  transform: none;
+}
+
+.timeline-tick-end .timeline-tick-label {
+  transform: translateX(-100%);
+}
+
 .timeline-marker {
   position: absolute;
   top: 8px;

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { positionToYear } from './scale'
 import { Timeline } from './Timeline'
 
 afterEach(cleanup)
@@ -54,13 +55,86 @@ describe('Timeline', () => {
     expect(onChange).toHaveBeenLastCalledWith(100000)
   })
 
-  it('tıklayınca geçerli bir yıl seçilir', () => {
+  it('tıklayınca tıklanan konumun yılı seçilir', () => {
     const { slider, onChange } = setup(2026)
-    fireEvent.pointerDown(slider, { clientX: 300, clientY: 10, pointerId: 1, button: 0 })
-    fireEvent.pointerUp(slider, { clientX: 300, clientY: 10, pointerId: 1, button: 0 })
+    fireEvent.pointerDown(slider, { clientX: 300, pointerId: 1, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerUp(slider, { clientX: 300, pointerId: 1, pointerType: 'mouse', button: 0 })
     expect(onChange).toHaveBeenCalledTimes(1)
-    const year = onChange.mock.calls[0][0]
-    expect(Number.isInteger(year)).toBe(true)
-    expect(year).not.toBe(0)
+    expect(onChange).toHaveBeenCalledWith(positionToYear(0.5))
+  })
+
+  it('eşik üstü sürüklemeden sonra yıl seçilmez, görünüm kayar', () => {
+    const { slider, onChange } = setup(2026)
+    // Önce yakınlaştır ki kaydırma mümkün olsun
+    fireEvent.keyDown(slider, { key: '+' })
+    const before = Number(slider.dataset.viewStart)
+    fireEvent.pointerDown(slider, { clientX: 300, pointerId: 1, pointerType: 'mouse', button: 0 })
+    fireEvent.pointerMove(slider, { clientX: 340, pointerId: 1, pointerType: 'mouse' })
+    fireEvent.pointerUp(slider, { clientX: 340, pointerId: 1, pointerType: 'mouse', button: 0 })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(Number(slider.dataset.viewStart)).not.toBe(before)
+  })
+
+  it('pinch sırasında ve sonrasında tıklama sayılmaz', () => {
+    const { slider, onChange } = setup(2026)
+    fireEvent.pointerDown(slider, { clientX: 250, pointerId: 1, pointerType: 'touch' })
+    fireEvent.pointerDown(slider, { clientX: 350, pointerId: 2, pointerType: 'touch' })
+    fireEvent.pointerMove(slider, { clientX: 450, pointerId: 2, pointerType: 'touch' })
+    fireEvent.pointerUp(slider, { clientX: 450, pointerId: 2, pointerType: 'touch' })
+    fireEvent.pointerUp(slider, { clientX: 250, pointerId: 1, pointerType: 'touch' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('fare sağ tık yıl seçmez', () => {
+    const { slider, onChange } = setup(2026)
+    fireEvent.pointerDown(slider, { clientX: 300, pointerId: 1, pointerType: 'mouse', button: 2 })
+    fireEvent.pointerUp(slider, { clientX: 300, pointerId: 1, pointerType: 'mouse', button: 2 })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('tekerlek görünümü değiştirir ve varsayılanı engeller', () => {
+    const { slider } = setup(2026)
+    const spanBefore = Number(slider.dataset.viewEnd) - Number(slider.dataset.viewStart)
+    const notPrevented = fireEvent.wheel(slider, { deltaY: -200, clientX: 300 })
+    expect(notPrevented).toBe(false)
+    const spanAfter = Number(slider.dataset.viewEnd) - Number(slider.dataset.viewStart)
+    expect(spanAfter).toBeLessThan(spanBefore)
+  })
+
+  it('Shift+← ve ← yıl 0\'ı atlar', () => {
+    const a = setup(5)
+    fireEvent.keyDown(a.slider, { key: 'ArrowLeft', shiftKey: true })
+    expect(a.onChange).toHaveBeenLastCalledWith(-6)
+    cleanup()
+    const b = setup(1)
+    fireEvent.keyDown(b.slider, { key: 'ArrowLeft' })
+    expect(b.onChange).toHaveBeenLastCalledWith(-1)
+  })
+
+  it('geçersiz value ağacı çökertmez', () => {
+    for (const bad of [0, 1.5, NaN]) {
+      const { slider } = setup(bad)
+      expect(slider).not.toHaveAttribute('aria-valuenow')
+      expect(screen.getByTestId('timeline-selected')).toHaveTextContent('—')
+      cleanup()
+    }
+  })
+
+  it('PageUp/PageDown pencereye orantılı büyük adım atar', () => {
+    const { slider, onChange } = setup(2026)
+    fireEvent.keyDown(slider, { key: 'PageUp' })
+    expect(onChange).toHaveBeenLastCalledWith(22026) // pencere 200000 yıl, %10
+    fireEvent.keyDown(slider, { key: 'PageDown' })
+    expect(onChange).toHaveBeenLastCalledWith(-17975) // 0. yıl atlanır
+  })
+
+  it('+ ve - yakınlaştırır / uzaklaştırır', () => {
+    const { slider } = setup(2026)
+    const width = () => Number(slider.dataset.viewEnd) - Number(slider.dataset.viewStart)
+    fireEvent.keyDown(slider, { key: '+' })
+    const zoomed = width()
+    expect(zoomed).toBeLessThan(1)
+    fireEvent.keyDown(slider, { key: '-' })
+    expect(width()).toBeGreaterThan(zoomed)
   })
 })

@@ -3,6 +3,8 @@ import { MAX_YEAR, MIN_YEAR } from '../lib/year'
 import {
   clampView,
   FULL_VIEW,
+  MIN_YEAR_SPAN,
+  yearSpan,
   panView,
   positionToYear,
   stepYear,
@@ -100,6 +102,17 @@ describe('görünüm penceresi', () => {
     const v = zoomView({ start: 0, end: 1 }, 0.5, 0.5)
     expect(v.end - v.start).toBeCloseTo(0.5, 12)
     expect((0.5 - v.start) / (v.end - v.start)).toBeCloseTo(0.5, 12)
+  })
+  it('maksimum yakınlaştırma her yerde en az 20 yıl kapsar (2026 ve uçlar dahil)', () => {
+    const foci = [0, yearToPosition(-44), yearToPosition(1), yearToPosition(2026), 0.3, 1]
+    for (const focus of foci) {
+      let v = FULL_VIEW
+      for (let i = 0; i < 100; i++) v = zoomView(v, focus, 0.5)
+      expect(yearSpan(v)).toBeGreaterThanOrEqual(MIN_YEAR_SPAN)
+      expect(yearSpan(v)).toBeLessThan(200)
+      expect(v.start).toBeGreaterThanOrEqual(0)
+      expect(v.end).toBeLessThanOrEqual(1)
+    }
   })
   it('zoomView tam görünümden fazla uzaklaştırmaz, çok da yakınlaştırmaz', () => {
     expect(zoomView(FULL_VIEW, 0.3, 10)).toEqual({ start: 0, end: 1 })

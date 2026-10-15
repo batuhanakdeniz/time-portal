@@ -6,11 +6,14 @@ import {
   FULL_VIEW,
   panView,
   positionToYear,
+  PRESENT_YEAR,
   stepYear,
+  yearSpan,
   yearToPosition,
   zoomView,
 } from './scale'
 import type { View } from './scale'
+import { computeTicks } from './ticks'
 import './Timeline.css'
 
 interface TimelineProps {
@@ -23,21 +26,10 @@ const LARGE_STEP = 10
 const FALLBACK_WIDTH = 600
 const MIN_TICK_GAP_PX = 72
 const DRAG_THRESHOLD_PX = 4
+const KEY_ZOOM = 0.7
 
-/** Eksen etiketi adayları: 1-2-5 dizisi (her iki yönde) ve yakın geçmişten bilinen yıllar. */
-const TICK_CANDIDATES: number[] = (() => {
-  const set = new Set<number>([1, 1500, 1800, 1900, 1950, 2000, 2026])
-  for (let m = 1; m <= MAX_YEAR; m *= 10) {
-    for (const k of [1, 2, 5]) {
-      const v = m * k
-      if (v <= MAX_YEAR) {
-        set.add(v)
-        set.add(-v)
-      }
-    }
-  }
-  return [...set].filter((y) => y !== 0 && y >= MIN_YEAR && y <= MAX_YEAR).sort((a, b) => a - b)
-})()
+const isValidYear = (y: number) =>
+  Number.isInteger(y) && y !== 0 && y >= MIN_YEAR && y <= MAX_YEAR
 
 export function Timeline({ value, onChange }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null)
@@ -48,6 +40,9 @@ export function Timeline({ value, onChange }: TimelineProps) {
 
   const pointers = useRef(new Map<number, { x: number }>())
   const gesture = useRef({ startX: 0, dragging: false, pinchDist: 0 })
+
+  const valid = isValidYear(value)
+  const label = valid ? formatYear(value) : '—'
 
   useEffect(() => {
     const el = trackRef.current
@@ -71,35 +66,23 @@ export function Timeline({ value, onChange }: TimelineProps) {
       e.preventDefault()
       const rect = el.getBoundingClientRect()
       const w = rect.width || FALLBACK_WIDTH
+      const unit = e.deltaMode === 1 ? 16 : 1 // satır modu
+      const dx = e.deltaX * unit
+      const dy = e.deltaY * unit
       const v = viewRef.current
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        setView(panView(v, (e.deltaX / w) * (v.end - v.start)))
+      if (Math.abs(dx) > Math.abs(dy)) {
+        setView(panView(v, (dx / w) * (v.end - v.start)))
         return
       }
       const focus = v.start + ((e.clientX - rect.left) / w) * (v.end - v.start)
-      setView(zoomView(v, focus, Math.exp(e.deltaY * 0.002)))
+      setView(zoomView(v, focus, Math.exp(dy * 0.002)))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
   const span = view.end - view.start
-  const toPercent = (p: number) => ((p - view.start) / span) * 100
-
-  const ticks = useMemo(() => {
-    const result: { year: number; left: number }[] = []
-    let lastX = -Infinity
-    for (const year of TICK_CANDIDATES) {
-      const p = yearToPosition(year)
-      if (p < view.start || p > view.end) continue
-      const x = ((p - view.start) / (view.end - view.start)) * width
-      if (x - lastX >= MIN_TICK_GAP_PX) {
-        result.push({ year, left: ((p - view.start) / (view.end - view.start)) * 100 })
-        lastX = x
-      }
-    }
-    return result
-  }, [view, width])
+  const ticks = useMemo(() => computeTicks(view, width, MIN_TICK_GAP_PX), [view, width])
 
   const localPosition = (clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect()
@@ -108,19 +91,25 @@ export function Timeline({ value, onChange }: TimelineProps) {
     return viewRef.current.start + (x / w) * (viewRef.current.end - viewRef.current.start)
   }
 
+  const firstTwo = () => [...pointers.current.entries()].slice(0, 2)
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     pointers.current.set(e.pointerId, { x: e.clientX })
     try {
       e.currentTarget.setPointerCapture?.(e.pointerId)
     } catch {
       /* yakalama desteklenmiyorsa sorun değil */
     }
-    gesture.current.startX = e.clientX
-    gesture.current.dragging = false
-    if (pointers.current.size === 2) {
-      const [a, b] = [...pointers.current.values()]
-      gesture.current.pinchDist = Math.abs(a.x - b.x)
-      gesture.current.dragging = true // pinch sırasında seçim yapma
+    if (pointers.current.size === 1) {
+      gesture.current.startX = e.clientX
+      gesture.current.dragging = false
+    } else {
+      gesture.current.dragging = true // çoklu dokunuşta seçim yapma
+      if (pointers.current.size === 2) {
+        const [[, a], [, b]] = firstTwo()
+        gesture.current.pinchDist = Math.abs(a.x - b.x)
+      }
     }
   }
 
@@ -130,8 +119,11 @@ export function Timeline({ value, onChange }: TimelineProps) {
     const w = trackRef.current?.getBoundingClientRect().width || FALLBACK_WIDTH
     pointers.current.set(e.pointerId, { x: e.clientX })
 
-    if (pointers.current.size === 2) {
-      const [a, b] = [...pointers.current.values()]
+    if (pointers.current.size > 1) {
+      // Pinch yalnızca ilk iki pointer ile; fazlası yok sayılır.
+      const pair = firstTwo()
+      if (!pair.some(([id]) => id === e.pointerId)) return
+      const [[, a], [, b]] = pair
       const dist = Math.abs(a.x - b.x)
       const old = gesture.current.pinchDist
       if (old > 0 && dist > 0) {
@@ -158,6 +150,10 @@ export function Timeline({ value, onChange }: TimelineProps) {
       onChange(positionToYear(localPosition(e.clientX)))
     }
     if (pointers.current.size === 0) gesture.current.dragging = false
+    else if (pointers.current.size === 2) {
+      const [[, a], [, b]] = firstTwo()
+      gesture.current.pinchDist = Math.abs(a.x - b.x)
+    }
   }
 
   const onPointerCancel = (e: PointerEvent<HTMLDivElement>) => {
@@ -177,21 +173,38 @@ export function Timeline({ value, onChange }: TimelineProps) {
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const base = valid ? value : PRESENT_YEAR
     const step = e.shiftKey ? LARGE_STEP : SMALL_STEP
+    const v = viewRef.current
+    const center = (v.start + v.end) / 2
     switch (e.key) {
       case 'ArrowRight':
       case 'ArrowUp':
-        select(stepYear(value, step))
+        select(stepYear(base, step))
         break
       case 'ArrowLeft':
       case 'ArrowDown':
-        select(stepYear(value, -step))
+        select(stepYear(base, -step))
         break
+      case 'PageUp':
+      case 'PageDown': {
+        const big = Math.max(100, Math.round(yearSpan(v) * 0.1))
+        select(stepYear(base, e.key === 'PageUp' ? big : -big))
+        break
+      }
       case 'Home':
         select(MIN_YEAR)
         break
       case 'End':
         select(MAX_YEAR)
+        break
+      case '+':
+      case '=':
+        setView(zoomView(v, center, KEY_ZOOM))
+        break
+      case '-':
+      case '_':
+        setView(zoomView(v, center, 1 / KEY_ZOOM))
         break
       default:
         return
@@ -199,13 +212,13 @@ export function Timeline({ value, onChange }: TimelineProps) {
     e.preventDefault()
   }
 
-  const valuePos = yearToPosition(value)
+  const valuePos = valid ? yearToPosition(value) : -1
   const markerVisible = valuePos >= view.start && valuePos <= view.end
 
   return (
     <div className="timeline">
       <div className="timeline-selected" data-testid="timeline-selected" aria-hidden="true">
-        {formatYear(value)}
+        {label}
       </div>
       <div
         ref={trackRef}
@@ -216,8 +229,10 @@ export function Timeline({ value, onChange }: TimelineProps) {
         aria-orientation="horizontal"
         aria-valuemin={MIN_YEAR}
         aria-valuemax={MAX_YEAR}
-        aria-valuenow={value}
-        aria-valuetext={formatYear(value)}
+        aria-valuenow={valid ? value : undefined}
+        aria-valuetext={valid ? label : 'Yıl seçilmedi'}
+        data-view-start={view.start}
+        data-view-end={view.end}
         onKeyDown={onKeyDown}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -226,11 +241,18 @@ export function Timeline({ value, onChange }: TimelineProps) {
       >
         <div className="timeline-axis" />
         {ticks.map((t) => (
-          <div key={t.year} className="timeline-tick" data-testid="timeline-tick" style={{ left: `${t.left}%` }}>
+          <div
+            key={t.year}
+            className={`timeline-tick timeline-tick-${t.align}`}
+            data-testid="timeline-tick"
+            style={{ left: `${t.left}%` }}
+          >
             <span className="timeline-tick-label">{formatYear(t.year)}</span>
           </div>
         ))}
-        {markerVisible && <div className="timeline-marker" style={{ left: `${toPercent(valuePos)}%` }} />}
+        {markerVisible && (
+          <div className="timeline-marker" style={{ left: `${((valuePos - view.start) / span) * 100}%` }} />
+        )}
       </div>
       <div className="timeline-hint">Sürükle: kaydır · Tekerlek / çimdik: yakınlaştır · Tıkla: yıl seç</div>
     </div>
