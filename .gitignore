@@ -16,3 +16,4 @@ node_modules/
 # üretilen yapıtlar
 /artifacts/
 .DS_Store
+*.tsbuildinfo

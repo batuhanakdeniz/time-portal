@@ -5,10 +5,15 @@ Kararlar ve mimari: `docs/DURUM.md`. Görevler: `docs/BACKLOG.md`.
 
 ## Komutlar
 
-Backend ve frontend iskeleti kurulunca burası doldurulur (Backlog 1 ve 2).
+Java 25 gerekir: `export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home`
 
 - Backend test: `./mvnw test`
-- Frontend: `npm --prefix web run build`, `npm --prefix web test`
+- Backend çalıştır: `./mvnw spring-boot:run` → http://localhost:8081 (`PORT` ile değişir)
+- Frontend test: `npm --prefix web test`
+- Frontend build: `npm --prefix web run build` (tip kontrolü dahil)
+- Frontend çalıştır: `npm --prefix web run dev` → http://localhost:5174, `/api` backend'e proxy edilir
+
+Portlar life-planner (8080, 5173) ile çakışmasın diye 8081 ve 5174.
 
 ## Çalışma kuralları
 

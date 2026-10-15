@@ -1,0 +1,28 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0b0d14;
+  color: #e6e8f0;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 16px;
+}
+
+.status {
+  font-size: 14px;
+}
+
+.status-up {
+  color: #4ade80;
+}
+
+.status-down {
+  color: #f87171;
+}

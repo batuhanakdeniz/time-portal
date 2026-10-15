@@ -6,6 +6,7 @@ description: Bir değişikliğin test kapısından geçip geçmediğini doğrula
 # Doğrulama kapısı
 
 Mevcut olan her kapıyı çalıştır, biri başarısızsa dur ve çıktıyı raporla.
+Backend için `JAVA_HOME` Java 25'i göstermeli (yol `CLAUDE.md`'de).
 
 1. Backend: `./mvnw test` (`pom.xml` varsa)
 2. Frontend build: `npm --prefix web run build` (`web/package.json` varsa)

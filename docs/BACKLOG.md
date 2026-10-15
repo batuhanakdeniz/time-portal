@@ -4,11 +4,11 @@ Durumlar: `todo` / `doing` / `done` / `blocked`. Otomasyon yalnızca **[oto]** i
 
 ## Faz 2: Yürüyen iskelet
 
-### 1. Backend iskeleti — `todo` [oto]
+### 1. Backend iskeleti — `done` [oto]
 Spring Boot (Java 25) projesi, `/api/health`, test altyapısı.
 **Kabul:** `./mvnw test` yeşil, `GET /api/health` 200 döner.
 
-### 2. Frontend iskeleti — `todo` [oto]
+### 2. Frontend iskeleti — `done` [oto]
 Vite + React + TypeScript, Three.js bağımlılıkları, `/api` proxy'si.
 **Kabul:** `npm run build` ve `npm test` yeşil.
 
