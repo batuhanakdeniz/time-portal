@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/**/*.java"
-  - "pom.xml"
+  - "backend/**/*.java"
+  - "backend/pom.xml"
 ---
 
 # Backend kuralları (Spring Boot, Java 25)

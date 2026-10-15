@@ -1,6 +1,6 @@
 ---
 paths:
-  - "web/src/**"
+  - "frontend/src/**"
 ---
 
 # Frontend kuralları (React, TypeScript, Three.js)

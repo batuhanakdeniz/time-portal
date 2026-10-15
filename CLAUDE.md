@@ -3,15 +3,24 @@
 Zaman çizgisinden tarih + dünya üzerinden konum seç → yapay zekayla üretilmiş, 360° dönülebilen ve küçük alanda gezilebilen 3D sahne.
 Kararlar ve mimari: `docs/DURUM.md`. Görevler: `docs/BACKLOG.md`.
 
+## Yapı
+
+Tek depo, iki bağımsız proje:
+
+- `backend/` — Spring Boot (Java 25), kendi `pom.xml` ve Maven wrapper'ı
+- `frontend/` — React + Vite + TypeScript, kendi `package.json`'ı
+
+İkisi yalnızca HTTP (`/api`) ile konuşur. Biri diğerinin dosyasını import etmez.
+
 ## Komutlar
 
 Java 25 gerekir: `export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home`
 
-- Backend test: `./mvnw test`
-- Backend çalıştır: `./mvnw spring-boot:run` → http://localhost:8081 (`PORT` ile değişir)
-- Frontend test: `npm --prefix web test`
-- Frontend build: `npm --prefix web run build` (tip kontrolü dahil)
-- Frontend çalıştır: `npm --prefix web run dev` → http://localhost:5174, `/api` backend'e proxy edilir
+- Backend test: `cd backend && ./mvnw test`
+- Backend çalıştır: `cd backend && ./mvnw spring-boot:run` → http://localhost:8081 (`PORT` ile değişir)
+- Frontend test: `npm --prefix frontend test`
+- Frontend build: `npm --prefix frontend run build` (tip kontrolü dahil)
+- Frontend çalıştır: `npm --prefix frontend run dev` → http://localhost:5174, `/api` backend'e proxy edilir
 
 Portlar life-planner (8080, 5173) ile çakışmasın diye 8081 ve 5174.
 

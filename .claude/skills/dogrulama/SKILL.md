@@ -8,9 +8,9 @@ description: Bir değişikliğin test kapısından geçip geçmediğini doğrula
 Mevcut olan her kapıyı çalıştır, biri başarısızsa dur ve çıktıyı raporla.
 Backend için `JAVA_HOME` Java 25'i göstermeli (yol `CLAUDE.md`'de).
 
-1. Backend: `./mvnw test` (`pom.xml` varsa)
-2. Frontend build: `npm --prefix web run build` (`web/package.json` varsa)
-3. Frontend test: `npm --prefix web test` (`web/package.json` varsa)
+1. Backend: `cd backend && ./mvnw test` (`backend/pom.xml` varsa)
+2. Frontend build: `npm --prefix frontend run build` (`frontend/package.json` varsa)
+3. Frontend test: `npm --prefix frontend test` (`frontend/package.json` varsa)
 
 ## Rapor
 

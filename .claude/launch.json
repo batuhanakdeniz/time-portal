@@ -3,15 +3,15 @@
   "configurations": [
     {
       "name": "backend",
-      "runtimeExecutable": "./mvnw",
-      "runtimeArgs": ["-q", "spring-boot:run"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd backend && ./mvnw -q spring-boot:run"],
       "env": { "JAVA_HOME": "/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home" },
       "port": 8081
     },
     {
-      "name": "web",
+      "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
       "port": 5174
     }
   ]

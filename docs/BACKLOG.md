@@ -6,11 +6,11 @@ Durumlar: `todo` / `doing` / `done` / `blocked`. Otomasyon yalnızca **[oto]** i
 
 ### 1. Backend iskeleti — `done` [oto]
 Spring Boot (Java 25) projesi, `/api/health`, test altyapısı.
-**Kabul:** `./mvnw test` yeşil, `GET /api/health` 200 döner.
+**Kabul:** `backend/` içinde `./mvnw test` yeşil, `GET /api/health` 200 döner.
 
 ### 2. Frontend iskeleti — `done` [oto]
 Vite + React + TypeScript, Three.js bağımlılıkları, `/api` proxy'si.
-**Kabul:** `npm run build` ve `npm test` yeşil.
+**Kabul:** `frontend/` içinde `npm run build` ve `npm test` yeşil.
 
 ### 3. Sahte üretici ve iş akışı — `todo` [oto]
 `SceneGenerator` arayüzü, örnek panorama dönen `FakeSceneGenerator`, `POST /api/scenes` (iş oluşturur), `GET /api/scenes/{id}` (durum + sonuç).

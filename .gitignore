@@ -1,6 +1,6 @@
 # build
 target/
-web/dist/
+frontend/dist/
 node_modules/
 
 # IDE
