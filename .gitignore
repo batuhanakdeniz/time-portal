@@ -1,0 +1,18 @@
+# build
+target/
+web/dist/
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+
+# yerel/gizli
+.env
+.env.*
+*.local
+.claude/settings.local.json
+
+# üretilen yapıtlar
+/artifacts/
+.DS_Store
