@@ -1,0 +1,4 @@
+# Ajanın kendi kurallarını ve CI'ı değiştirmesi her zaman sahibinin onayını ister.
+/.github/ @batuhanakdeniz
+/.claude/ @batuhanakdeniz
+/CLAUDE.md @batuhanakdeniz
