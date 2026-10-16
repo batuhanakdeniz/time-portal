@@ -1,0 +1,81 @@
+.timeline {
+  user-select: none;
+}
+
+.timeline-selected {
+  font-size: 28px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.timeline-track {
+  position: relative;
+  height: 64px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 8px;
+  background: #141826;
+  outline: none;
+}
+
+.timeline-track:active {
+  cursor: grabbing;
+}
+
+.timeline-track:focus-visible {
+  box-shadow: 0 0 0 2px #7c8cff;
+}
+
+.timeline-axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24px;
+  height: 2px;
+  background: #2a3045;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 16px;
+  height: 18px;
+  width: 1px;
+  background: #5b6485;
+}
+
+.timeline-tick-label {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 12px;
+  white-space: nowrap;
+  color: #9aa3c2;
+}
+
+.timeline-tick-start .timeline-tick-label {
+  transform: none;
+}
+
+.timeline-tick-end .timeline-tick-label {
+  transform: translateX(-100%);
+}
+
+.timeline-marker {
+  position: absolute;
+  top: 8px;
+  height: 34px;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: #7c8cff;
+}
+
+.timeline-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  text-align: center;
+  color: #6b7494;
+}
