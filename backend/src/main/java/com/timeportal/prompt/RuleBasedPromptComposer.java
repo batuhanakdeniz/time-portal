@@ -1,8 +1,8 @@
 package com.timeportal.prompt;
 
 import java.util.List;
-import java.util.Objects;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.timeportal.scene.SceneRequest;
@@ -15,9 +15,10 @@ import com.timeportal.scene.SceneRequest;
  * tunç/demir çağı kimi bölgelerde hiç yaşanmamıştır). Bu sınıf görsel model için makul bir ipucu
  * üretir, tarihsel doğruluk iddia etmez.
  *
- * <p>Kıta tahmini sınırlayıcı kutularla yapılır ve yaklaşıktır; okyanus/kara ayrımı yapılmaz, bu
- * yüzden tarif bunu varsaymayan nötr ifadeler kullanır. Kutulara uymayan yerler "unknown" sayılır ve
- * tarife hiç bölge adı yazılmaz.
+ * <p>Kıta/bölge adı yalnızca {@link GeoContext} verirse yazılır; varsayılan olarak hiç yazılmaz.
+ * Okyanus/kara ayrımı da yapılamaz, bu yüzden yerleşim öğeleri "arazi uygunsa" koşuluyla anlatılır.
+ * Kültüre özgü öğeler (kilise, sütun vb.) kullanılmaz; yalnızca dönemin teknoloji düzeyi anlatılır.
+ * Kutup kuşağında ve buzul çağında insan yapımı hiçbir öğe yazılmaz.
  */
 @Component
 public class RuleBasedPromptComposer implements PromptComposer {
@@ -30,6 +31,7 @@ public class RuleBasedPromptComposer implements PromptComposer {
 	static final int EARLY_MODERN_START = 1_500;
 	static final int INDUSTRIAL_START = 1_750;
 	static final int MODERN_START = 1_900;
+	/** Bilinçli olarak bugünün yılına (2026) bağlı: "yakın gelecek" şimdiden kısa bir süre sonra başlar. */
 	static final int NEAR_FUTURE_START = 2_031;
 	static final int FAR_FUTURE_START = 2_201;
 	static final int VERY_FAR_FUTURE_START = 10_001;
@@ -37,54 +39,36 @@ public class RuleBasedPromptComposer implements PromptComposer {
 	// Enlem bantları (mutlak değer, üst sınır dahil).
 	static final double TROPICAL_MAX_LAT = 23.5;
 	static final double SUBTROPICAL_MAX_LAT = 35;
-	static final double TEMPERATE_MAX_LAT = 55;
+	static final double TEMPERATE_MAX_LAT = 60;
 	static final double SUBARCTIC_MAX_LAT = 66.5;
 
-	private static final String UNKNOWN_REGION = "unknown";
+	private static final long GOLDEN = 0x9E3779B97F4A7C15L;
 
-	private record Era(String name, String scenery) {
+	/** @param human insan yapımı öğeler; null ise yalnızca doğa anlatılır */
+	private record Era(String name, String human) {
 	}
 
-	private record Box(String name, double minLat, double maxLat, double minLon, double maxLon) {
-		boolean contains(double lat, double lon) {
-			return lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
-		}
-	}
-
-	private static final Era ICE_AGE = new Era("Ice Age hunter-gatherer era",
-			"untouched wilderness, no buildings, a few small campfires far away");
+	private static final Era ICE_AGE = new Era("Ice Age hunter-gatherer era", null);
 	private static final Era NEOLITHIC = new Era("Neolithic era",
-			"early farming hamlet of timber and mud-brick huts, tiny fields, no metal objects");
+			"small settlement of simple hand-built huts from local materials, tiny fields");
 	private static final Era BRONZE_IRON = new Era("Bronze and early Iron Age",
-			"walled town of stone and mud brick, simple farmland, ox carts");
+			"settlement of hand-built structures from local materials, simple farmland");
 	private static final Era ANTIQUITY = new Era("Classical antiquity",
-			"stone town with columns and tiled roofs, market paths, farmland");
+			"settlement with masonry and timber buildings typical of the region, footpaths, farmland");
 	private static final Era MEDIEVAL = new Era("Medieval era",
-			"stone and timber village, distant church tower, dirt roads");
+			"village of timber and stone buildings typical of the region, dirt roads, farmland");
 	private static final Era EARLY_MODERN = new Era("Early modern era",
-			"timber-framed and brick houses, windmills, cobbled lanes");
+			"town of brick and timber buildings typical of the region, unpaved lanes, hand tools");
 	private static final Era INDUSTRIAL = new Era("Industrial era",
-			"brick factories with smoking chimneys, railway tracks, gas lamps");
+			"buildings with factory chimneys, railway tracks, early steam machinery");
 	private static final Era MODERN = new Era("Modern era",
 			"contemporary buildings, paved roads, power lines");
 	private static final Era NEAR_FUTURE = new Era("Near future",
-			"green architecture, solar panels, wind turbines, quiet autonomous vehicles");
+			"contemporary buildings with solar panels, wind turbines, quiet electric vehicles");
 	private static final Era FAR_FUTURE = new Era("Far future",
-			"sleek towers, elevated transit lines, glowing light panels blended with nature");
+			"futuristic architecture, elevated transit lines, glowing light panels blended with nature");
 	private static final Era VERY_FAR_FUTURE = new Era("Very distant future",
-			"vast abstract structures and weathered ruins reclaimed by nature under an altered sky");
-
-	// Sıra önemli: ilk eşleşen kazanır. Kutular kaba ve çakışabilir.
-	private static final List<Box> REGIONS = List.of(
-			new Box("Antarctica", -90, -60, -180, 180),
-			new Box("Europe", 63, 67, -25, -13), // İzlanda
-			new Box("Europe", 36, 71, -11, 40),
-			new Box("Africa", -35, 34, -18, 34),
-			new Box("Africa", -35, 12, 34, 52),
-			new Box("Asia", 1, 78, 35, 180),
-			new Box("Oceania", -50, 0, 110, 180),
-			new Box("North America", 7, 84, -170, -52),
-			new Box("South America", -56, 13, -82, -34));
+			"futuristic abstract structures and weathered ruins reclaimed by nature under an altered sky");
 
 	private static final List<String> TIMES_OF_DAY = List.of(
 			"soft morning light",
@@ -92,25 +76,56 @@ public class RuleBasedPromptComposer implements PromptComposer {
 			"warm golden late-afternoon light",
 			"calm dusk light");
 
+	private final GeoContext geoContext;
+
+	@Autowired
+	public RuleBasedPromptComposer() {
+		this(GeoContext.UNKNOWN);
+	}
+
+	public RuleBasedPromptComposer(GeoContext geoContext) {
+		this.geoContext = geoContext;
+	}
+
 	@Override
 	public ScenePrompt compose(SceneRequest request) {
+		double lat = request.latitude() + 0.0; // -0.0 -> 0.0
+		double lon = request.longitude() + 0.0;
 		Era era = eraFor(request.year());
-		String climate = climateZone(request.latitude());
-		String hemisphere = hemisphere(request.latitude());
-		String region = region(request.latitude(), request.longitude());
-		boolean known = !UNKNOWN_REGION.equals(region);
+		String climate = climateZone(lat);
+		String position = position(lat);
+		String region = geoContext.regionName(lat, lon).filter(r -> !r.isBlank()).map(r -> ", " + r).orElse("");
 
-		String setting = climate + " climate, " + hemisphere + " hemisphere" + (known ? ", " + region : "");
+		String setting = climate + " climate, " + position + region;
 
-		int slot = Math.floorMod(
-				Objects.hash(request.year(), request.latitude(), request.longitude()), TIMES_OF_DAY.size());
+		String scenery;
+		if (era.human() == null || "polar".equals(climate)) {
+			scenery = "natural landscape typical of the climate, with rock, ice or vegetation, and a wide sky";
+		} else {
+			scenery = "natural landscape typical of the climate; where terrain allows, " + era.human();
+		}
+
+		int slot = (int) Long.remainderUnsigned(hash(request.year(), lat, lon), TIMES_OF_DAY.size());
 		String text = "Seamless 360-degree equirectangular panorama, " + era.name() + ", "
-				+ climate + " climate with natural scenery typical of the " + hemisphere + " hemisphere"
-				+ (known ? ", " + region : "") + ". "
-				+ "Scene: " + era.scenery() + ". "
+				+ setting + ". Scene: " + scenery + ". "
 				+ "Lighting: " + TIMES_OF_DAY.get(slot) + ". "
 				+ "Photorealistic, high detail, level horizon, no text, no watermark.";
 		return new ScenePrompt(text, era.name(), setting);
+	}
+
+	/** Java sürümlerinden bağımsız, iyi karıştıran sabit bir karma (splitmix64). */
+	static long hash(int year, double lat, double lon) {
+		long x = mix(year * GOLDEN);
+		x = mix(x ^ Double.doubleToLongBits(lat + 0.0));
+		x = mix(x ^ Double.doubleToLongBits(lon + 0.0));
+		return x;
+	}
+
+	private static long mix(long z) {
+		z += GOLDEN;
+		z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+		z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+		return z ^ (z >>> 31);
 	}
 
 	private static Era eraFor(int year) {
@@ -136,16 +151,9 @@ public class RuleBasedPromptComposer implements PromptComposer {
 		return "polar";
 	}
 
-	private static String hemisphere(double latitude) {
-		if (latitude > 0) return "northern";
-		if (latitude < 0) return "southern";
-		return "equatorial";
-	}
-
-	private static String region(double latitude, double longitude) {
-		for (Box box : REGIONS) {
-			if (box.contains(latitude, longitude)) return box.name();
-		}
-		return UNKNOWN_REGION;
+	private static String position(double latitude) {
+		if (latitude > 0) return "northern hemisphere";
+		if (latitude < 0) return "southern hemisphere";
+		return "on the equator";
 	}
 }
