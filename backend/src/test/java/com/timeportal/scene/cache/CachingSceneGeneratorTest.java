@@ -6,12 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.timeportal.scene.SceneGenerator;
 import com.timeportal.scene.SceneRequest;
 import com.timeportal.scene.SceneResult;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -93,42 +89,114 @@ class CachingSceneGeneratorTest {
 		assertThat(delegate.calls).hasValue(4);
 	}
 
+	/** Öndeki iş delegede beklerken diğer iş parçacıklarının future üzerinde park ettiğini bekler. */
+	private static List<Object> runConcurrently(CachingSceneGenerator cache, CountDownLatch entered,
+			CountDownLatch release, int threads) throws Exception {
+		Object[] outcomes = new Object[threads];
+		Thread[] workers = new Thread[threads];
+		for (int i = 0; i < threads; i++) {
+			int idx = i;
+			workers[i] = new Thread(() -> {
+				try {
+					outcomes[idx] = cache.generate(req(1800));
+				}
+				catch (Throwable t) {
+					outcomes[idx] = t;
+				}
+			});
+		}
+		workers[0].start();
+		assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+		for (int i = 1; i < threads; i++) {
+			workers[i].start();
+		}
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		for (int i = 1; i < threads; i++) {
+			while (workers[i].getState() != Thread.State.WAITING) {
+				assertThat(System.nanoTime()).isLessThan(deadline);
+				Thread.sleep(1);
+			}
+		}
+		release.countDown();
+		for (Thread w : workers) {
+			w.join(5000);
+			assertThat(w.isAlive()).isFalse();
+		}
+		return List.of(outcomes);
+	}
+
 	@Test
 	void concurrentSameKeyGeneratesOnce() throws Exception {
-		int threads = 8;
 		AtomicInteger calls = new AtomicInteger();
+		CountDownLatch entered = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
+		SceneResult expected = new SceneResult("/p.png", "/d.png");
 		SceneGenerator slow = r -> {
 			calls.incrementAndGet();
-			try {
-				release.await(5, TimeUnit.SECONDS);
-			}
-			catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
+			entered.countDown();
+			await(release);
+			return expected;
+		};
+		CachingSceneGenerator cache = new CachingSceneGenerator(slow, 10);
+
+		List<Object> outcomes = runConcurrently(cache, entered, release, 8);
+
+		assertThat(calls).hasValue(1);
+		assertThat(outcomes).hasSize(8).allMatch(expected::equals);
+	}
+
+	@Test
+	void waitersGetSameExceptionAndFailureIsNotCached() throws Exception {
+		AtomicInteger calls = new AtomicInteger();
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		IllegalStateException boom = new IllegalStateException("boom");
+		SceneGenerator failing = r -> {
+			if (calls.incrementAndGet() == 1) {
+				entered.countDown();
+				await(release);
+				throw boom;
 			}
 			return new SceneResult("/p.png", "/d.png");
 		};
-		CachingSceneGenerator cache = new CachingSceneGenerator(slow, 10);
-		ExecutorService pool = Executors.newFixedThreadPool(threads);
+		CachingSceneGenerator cache = new CachingSceneGenerator(failing, 10);
+
+		List<Object> outcomes = runConcurrently(cache, entered, release, 4);
+
+		assertThat(calls).hasValue(1);
+		assertThat(outcomes).hasSize(4).allMatch(o -> o == boom);
+		assertThat(cache.generate(req(1800))).isEqualTo(new SceneResult("/p.png", "/d.png"));
+		assertThat(calls).hasValue(2);
+	}
+
+	@Test
+	void sneakyCheckedExceptionDoesNotLeaveWaitersHanging() throws Exception {
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		Exception checked = new java.io.IOException("io");
+		SceneGenerator sneaky = r -> {
+			entered.countDown();
+			await(release);
+			return CachingSceneGeneratorTest.<RuntimeException, SceneResult>sneaky(checked);
+		};
+		CachingSceneGenerator cache = new CachingSceneGenerator(sneaky, 10);
+
+		List<Object> outcomes = runConcurrently(cache, entered, release, 3);
+
+		assertThat(outcomes).hasSize(3).allMatch(o -> o == checked);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T extends Throwable, R> R sneaky(Throwable t) throws T {
+		throw (T) t;
+	}
+
+	private static void await(CountDownLatch latch) {
 		try {
-			CountDownLatch started = new CountDownLatch(threads);
-			List<Future<SceneResult>> futures = new ArrayList<>();
-			for (int i = 0; i < threads; i++) {
-				futures.add(pool.submit(() -> {
-					started.countDown();
-					return cache.generate(req(1800));
-				}));
-			}
-			started.await(5, TimeUnit.SECONDS);
-			Thread.sleep(100);
-			release.countDown();
-			for (Future<SceneResult> f : futures) {
-				assertThat(f.get(5, TimeUnit.SECONDS)).isEqualTo(new SceneResult("/p.png", "/d.png"));
-			}
-			assertThat(calls).hasValue(1);
+			latch.await(5, TimeUnit.SECONDS);
 		}
-		finally {
-			pool.shutdownNow();
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 		}
 	}
 

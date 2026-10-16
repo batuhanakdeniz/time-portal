@@ -102,4 +102,10 @@ class SceneCacheKeyTest {
 		// 2120 (mesafe 94, tam yıl) ile 2127 (mesafe 101, dilim başı 2120) çakışmamalı
 		assertThat(key(2120, 0, 0)).isNotEqualTo(key(2127, 0, 0));
 	}
+
+	@Test
+	void negativeZeroEqualsZero() {
+		assertThat(key(2000, -0.0, -0.0)).isEqualTo(key(2000, 0.0, 0.0));
+		assertThat(key(2000, -0.004, -0.004)).isEqualTo(key(2000, 0.0, 0.0));
+	}
 }

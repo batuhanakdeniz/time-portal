@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Başarısız üretimler (istisna) saklanmaz ve istisna çağırana aynen yayılır. Boyut sınırlıdır
  * (LRU: en az yakın zamanda kullanılan düşer). Aynı anahtar için eşzamanlı istekler tek üretime
  * katılır (single-flight): ilk istek üretir, diğerleri sonucu (ya da aynı istisnayı) bekler.
+ * Bekleyenler, öndeki işin fırlattığı istisna örneğinin aynısını alır (sarmalanmaz, paylaşılır).
  * Üretim pahalı ve gerçek servis kotalı olduğu için çift üretimi önlemeye değer.
  */
 public class CachingSceneGenerator implements SceneGenerator {
@@ -61,12 +62,13 @@ public class CachingSceneGenerator implements SceneGenerator {
 			mine.complete(result);
 			return result;
 		}
-		catch (RuntimeException | Error e) {
-			mine.completeExceptionally(e);
-			throw e;
+		catch (Throwable t) {
+			// Delege işaretli istisnayı gizlice fırlatsa bile bekleyenler takılı kalmasın.
+			mine.completeExceptionally(t);
+			throw t;
 		}
 		finally {
-			inFlight.remove(key);
+			inFlight.remove(key, mine);
 		}
 	}
 
@@ -81,13 +83,12 @@ public class CachingSceneGenerator implements SceneGenerator {
 			return future.join();
 		}
 		catch (CompletionException e) {
-			if (e.getCause() instanceof RuntimeException re) {
-				throw re;
-			}
-			if (e.getCause() instanceof Error err) {
-				throw err;
-			}
-			throw e;
+			return CachingSceneGenerator.<RuntimeException, SceneResult>sneakyThrow(e.getCause());
 		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T extends Throwable, R> R sneakyThrow(Throwable t) throws T {
+		throw (T) t;
 	}
 }

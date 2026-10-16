@@ -14,9 +14,10 @@ import org.springframework.context.annotation.Primary;
 @Configuration
 public class SceneGeneratorConfig {
 
+	// Gerçek adaptör gelince delegenin tipi (FakeSceneGenerator) değişecek; davranış aynı kalır.
 	@Bean
 	@Primary
-	SceneGenerator cachedSceneGenerator(FakeSceneGenerator delegate,
+	SceneGenerator primarySceneGenerator(FakeSceneGenerator delegate,
 			@Value("${timeportal.cache.enabled:true}") boolean enabled,
 			@Value("${timeportal.cache.max-entries:500}") int maxEntries) {
 		return enabled ? new CachingSceneGenerator(delegate, maxEntries) : delegate;
