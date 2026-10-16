@@ -11,6 +11,15 @@ vi.mock('./location/LocationPicker', () => ({
   ),
 }))
 
+// three/WebGL jsdom'da yok; görüntüleyicinin kendisi ViewerSection testlerinde sınanır.
+vi.mock('./scene/ViewerSection', () => ({
+  ViewerSection: ({ src, alt }: { src: string; alt: string }) => (
+    <figure data-testid="viewer">
+      <img src={src} alt={alt} />
+    </figure>
+  ),
+}))
+
 const scene = (status: string, extra: Record<string, unknown> = {}) => ({
   id: 's1',
   status,
