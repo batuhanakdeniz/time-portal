@@ -17,8 +17,9 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 - **Önbellek:** Aynı (yaklaşık konum hücresi, tarih dilimi) için sonuç yeniden üretilmez.
 - **API sözleşmesi:** Elle yazılan `docs/API.md` (karar #14). Yıl negatifse MÖ, yıl 0 yoktur.
 - **Zaman çizgisi:** Yatay, kaydırılıp yakınlaştırılan, doğrusal olmayan ölçekli çizgi (karar #15). MÖ/MS gösterimi tek yardımcıdan (`frontend/src/lib/year.ts`).
-- **Konum seçici:** Düz harita, MapLibre GL JS (karar #16). Geliştirmede anahtarsız demo karolar; üretim karo sağlayıcısı açık karar (#20).
-- **Servis seçimi:** Panorama ve derinlik servislerini ajan araştırır, karşılaştırmayı #17'ye yazar, sahibi kısa listeden seçer (karar #17).
+- **Konum seçici:** Düz harita, MapLibre GL JS (karar #16). Karolar: anahtarsız **OpenFreeMap** (karar #20, uygulama #27); OpenStreetMap atfı görünür olmalı.
+- **Ücretli servis yok (karar #17):** Panorama, derinlik ve sahne tarifi için ücretli API kullanılmaz. Üretici ileride açık kaynak araçlarla kendimiz yazılacak (#26); o zamana kadar `FakeSceneGenerator` kullanılır. Sahne tarifi kural tabanlı (`RuleBasedPromptComposer`, #9); LLM ileride aynı arayüzün arkasına takılabilir.
+- **Önbellek konumu:** Üreticinin önünde sarmalayıcı (`CachingSceneGenerator`, #10); iş servisi değişmez.
 
 ## Orkestrasyon kararları
 
@@ -35,7 +36,7 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 ```
 tarih + konum
   → bağlam (ters coğrafi kodlama, dönem bilgisi)
-  → PromptComposer (LLM): sahne tarifi
+  → PromptComposer (şimdilik kural tabanlı): sahne tarifi
   → SceneGenerator: panorama
   → DepthEstimator: derinlik haritası
   → artefaktlar: pano.jpg, depth.png, meta.json
@@ -46,10 +47,9 @@ tarih + konum
 
 Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
-1. Panorama ve derinlik servisi: #17 (araştırma sürüyor, sonra kısa listeden seçim)
-2. Üretim harita karo sağlayıcısı: #20
-3. Verilenler: API sözleşmesi #14, zaman çizgisi #15, konum seçici #16 (yukarıdaki Kararlar bölümünde)
-4. Henüz issue'su olmayanlar: barındırma ve yapıt depolama, kimlik doğrulama gerekecek mi, tarihsel doğruluk uyarısı metni, kota eşikleri (#11), moderasyon yaklaşımı (#12).
+1. Verilenler: API sözleşmesi #14, zaman çizgisi #15, konum seçici #16, ücretli servis yok #17, OpenFreeMap #20 (yukarıdaki Kararlar bölümünde)
+2. Kendi üreticimizin yaklaşımı ve zamanı: #26
+3. Henüz issue'su olmayanlar: barındırma ve yapıt depolama, kimlik doğrulama gerekecek mi, tarihsel doğruluk uyarısı metni, kota eşikleri (#11), moderasyon yaklaşımı (#12).
 
 ## Riskler
 
@@ -62,7 +62,7 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 Güncel durum her zaman GitHub'da: `gh issue list --label P0-şimdi`, `gh pr list`.
 
-1. #6 (zaman çizgisi) ve #7 (konum seçici) paralel worktree'lerde geliştiriliyor; #17 araştırması sürüyor.
-2. Bileşenler birleşince ayrı bir entegrasyon görevi `App.tsx`'te zaman çizgisi + konum seçici + `POST /api/scenes` akışını bağlar.
-3. #4 (360° görüntüleyici) sıradaki P1 işi.
+1. Ana ekran uçtan uca çalışıyor (#24): yıl + konum seç → sahne üret → önizleme (sahte üretici).
+2. Paralel geliştiriliyor: #4 (360° görüntüleyici), #9 (kural tabanlı PromptComposer), #19 (iş temizliği, eşzamanlılık), #10 (önbellek).
+3. Sonra: #5 (derinlikli hareket, #4'e bağlı), #27 (OpenFreeMap), PromptComposer'ın akışa bağlanması.
 4. Sahibi: #13 kurulumu (GitHub App, routine).
