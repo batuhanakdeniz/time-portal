@@ -6,6 +6,14 @@ const req = { year: -44, latitude: 41.9, longitude: 12.5 }
 function scene(status: SceneStatus, extra: Partial<Scene> = {}): Scene {
   return { id: 's1', status, request: req, result: null, error: null, createdAt: '2026-10-15T15:30:00Z', ...extra }
 }
+// Gerçek fetch gibi: hiç çözülmez ama sinyal iptal edilince reddeder.
+const hangingFetch = () =>
+  vi.fn().mockImplementation(
+    (_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      }),
+  )
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -38,6 +46,23 @@ describe('createScene', () => {
     expect(err).toBeInstanceOf(ApiError)
     expect(err.status).toBe(502)
     expect(err.message).toBe('Sunucu hatası (502)')
+  })
+
+  it('2xx ama JSON olmayan gövdede geçersiz yanıt hatası verir', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html></html>', { status: 200 })))
+    await expect(createScene(req)).rejects.toMatchObject({ name: 'ApiError', status: 200, message: 'Sunucudan geçersiz yanıt' })
+  })
+
+  it('bilinmeyen status değerini geçersiz yanıt sayar', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(scene('BILINMEYEN' as SceneStatus), 202)))
+    await expect(createScene(req)).rejects.toMatchObject({ message: 'Sunucudan geçersiz yanıt' })
+  })
+
+  it('yanıt hiç gelmezse SceneTimeoutError fırlatır', async () => {
+    vi.stubGlobal('fetch', hangingFetch())
+    const assertion = expect(createScene(req, { timeoutMs: 500 })).rejects.toBeInstanceOf(SceneTimeoutError)
+    await vi.advanceTimersByTimeAsync(600)
+    await assertion
   })
 
   it('ağ hatasını olduğu gibi iletir', async () => {
@@ -87,6 +112,22 @@ describe('waitForScene', () => {
     const p = waitForScene('s1', { intervalMs: 100, timeoutMs: 350 })
     const assertion = expect(p).rejects.toBeInstanceOf(SceneTimeoutError)
     await vi.advanceTimersByTimeAsync(1000)
+    await assertion
+  })
+
+  it('asılı kalan tek bir istek de zaman aşımına uğrar', async () => {
+    vi.stubGlobal('fetch', hangingFetch())
+    const assertion = expect(waitForScene('s1', { intervalMs: 100, timeoutMs: 500 })).rejects.toBeInstanceOf(SceneTimeoutError)
+    await vi.advanceTimersByTimeAsync(600)
+    await assertion
+  })
+
+  it('dış iptal zaman aşımı sayılmaz', async () => {
+    vi.stubGlobal('fetch', hangingFetch())
+    const ctrl = new AbortController()
+    const assertion = expect(waitForScene('s1', { timeoutMs: 5000, signal: ctrl.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.advanceTimersByTimeAsync(100)
+    ctrl.abort()
     await assertion
   })
 

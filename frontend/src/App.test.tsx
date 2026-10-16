@@ -121,6 +121,43 @@ describe('App', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Sunucuya ulaşılamadı')
   })
 
+  it('READY ama sonuç yoksa geçersiz sonuç mesajı gösterir', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(scene('PENDING'), 202)).mockResolvedValueOnce(json(scene('READY'))))
+    render(<App />)
+    await pickRome()
+    fireEvent.click(generate())
+    await tick(0)
+    expect(screen.getByRole('status')).toHaveTextContent('Sunucu geçersiz sonuç döndü')
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('bilinmeyen status gelirse boş kalmaz, geçersiz yanıt der', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(scene('PENDING'), 202)).mockResolvedValueOnce(json(scene('???'))))
+    render(<App />)
+    await pickRome()
+    fireEvent.click(generate())
+    await tick(0)
+    expect(screen.getByRole('status')).toHaveTextContent('Sunucudan geçersiz yanıt')
+  })
+
+  it('2xx ama JSON olmayan yanıt "ulaşılamadı" değil geçersiz yanıt der', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('<html/>', { status: 200 })))
+    render(<App />)
+    await pickRome()
+    fireEvent.click(generate())
+    await tick(0)
+    expect(screen.getByRole('status')).toHaveTextContent('Sunucudan geçersiz yanıt')
+  })
+
+  it('beklenmeyen hata genel mesaj verir', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('garip')))
+    render(<App />)
+    await pickRome()
+    fireEvent.click(generate())
+    await tick(0)
+    expect(screen.getByRole('status')).toHaveTextContent('Beklenmeyen bir hata oluştu')
+  })
+
   it('yoklama sırasında ağ hatası da "Sunucuya ulaşılamadı" gösterir', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(scene('PENDING'), 202)).mockRejectedValue(new TypeError('x')))
     render(<App />)
@@ -154,7 +191,7 @@ describe('App', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
-        if (init?.signal) signals.push(init.signal)
+        if (init?.signal && init.method !== 'POST') signals.push(init.signal)
         return init?.method === 'POST' ? json(scene('PENDING'), 202) : json(scene('RUNNING'))
       }),
     )

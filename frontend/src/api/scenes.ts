@@ -45,8 +45,23 @@ interface CallOptions {
   signal?: AbortSignal
 }
 
+const STATUSES: readonly string[] = ['PENDING', 'RUNNING', 'READY', 'FAILED']
+const INVALID_RESPONSE = 'Sunucudan geçersiz yanıt'
+
 async function parseOrThrow(res: Response): Promise<Scene> {
-  if (res.ok) return (await res.json()) as Scene
+  if (res.ok) {
+    let body: unknown
+    try {
+      body = await res.json()
+    } catch {
+      throw new ApiError(res.status, INVALID_RESPONSE)
+    }
+    const b = body as Partial<Scene> | null
+    if (!b || typeof b !== 'object' || typeof b.id !== 'string' || typeof b.status !== 'string' || !STATUSES.includes(b.status)) {
+      throw new ApiError(res.status, INVALID_RESPONSE)
+    }
+    return b as Scene
+  }
   let message = `Sunucu hatası (${res.status})`
   try {
     const body = (await res.json()) as { error?: unknown }
@@ -57,14 +72,55 @@ async function parseOrThrow(res: Response): Promise<Scene> {
   throw new ApiError(res.status, message)
 }
 
-export async function createScene(req: SceneRequest, { signal }: CallOptions = {}): Promise<Scene> {
-  const res = await fetch('/api/scenes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-    signal,
-  })
-  return parseOrThrow(res)
+function abortError(): Error {
+  const e = new Error('İstek iptal edildi')
+  e.name = 'AbortError'
+  return e
+}
+
+/** Dış sinyal ile zaman aşımını tek sinyalde birleştirir (zamanlayıcı fake timers ile çalışır). */
+function withTimeout(outer: AbortSignal | undefined, timeoutMs: number) {
+  const ctl = new AbortController()
+  let timedOut = false
+  const onOuter = () => ctl.abort()
+  if (outer?.aborted) ctl.abort()
+  else outer?.addEventListener('abort', onOuter, { once: true })
+  const timer = setTimeout(() => {
+    timedOut = true
+    ctl.abort()
+  }, timeoutMs)
+  return {
+    signal: ctl.signal,
+    /** Kendi zaman aşımımız tetiklendiyse hatayı SceneTimeoutError'a çevirir. */
+    translate(e: unknown): unknown {
+      return timedOut && !outer?.aborted ? new SceneTimeoutError(timeoutMs) : e
+    },
+    dispose() {
+      clearTimeout(timer)
+      outer?.removeEventListener('abort', onOuter)
+    },
+  }
+}
+
+export interface CreateOptions extends CallOptions {
+  timeoutMs?: number
+}
+
+export async function createScene(req: SceneRequest, { signal, timeoutMs = 30000 }: CreateOptions = {}): Promise<Scene> {
+  const t = withTimeout(signal, timeoutMs)
+  try {
+    const res = await fetch('/api/scenes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: t.signal,
+    })
+    return await parseOrThrow(res)
+  } catch (e) {
+    throw t.translate(e)
+  } finally {
+    t.dispose()
+  }
 }
 
 export async function getScene(id: string, { signal }: CallOptions = {}): Promise<Scene> {
@@ -72,24 +128,18 @@ export async function getScene(id: string, { signal }: CallOptions = {}): Promis
   return parseOrThrow(res)
 }
 
-function abortError(): Error {
-  const e = new Error('İstek iptal edildi')
-  e.name = 'AbortError'
-  return e
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(abortError())
+    if (signal.aborted) return reject(abortError())
     const onAbort = () => {
       clearTimeout(timer)
       reject(abortError())
     }
     const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
+      signal.removeEventListener('abort', onAbort)
       resolve()
     }, ms)
-    signal?.addEventListener('abort', onAbort, { once: true })
+    signal.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -99,23 +149,32 @@ export interface WaitOptions extends CallOptions {
   onStatus?: (status: SceneStatus, scene: Scene) => void
 }
 
-/** READY ya da FAILED olana kadar yoklar ve son durumu döner. Zaman aşımında SceneTimeoutError, iptalde AbortError fırlatır. */
+/**
+ * READY ya da FAILED olana kadar yoklar ve son durumu döner. Toplam süre tek bir sinyalle sınırlıdır:
+ * asılı kalan istek de dahil zaman aşımında SceneTimeoutError, dış iptalde AbortError fırlatır.
+ */
 export async function waitForScene(
   id: string,
-  { intervalMs = 1000, timeoutMs = 60000, signal, onStatus }: WaitOptions = {},
+  { intervalMs = 1000, timeoutMs = 60000, signal: outer, onStatus }: WaitOptions = {},
 ): Promise<Scene> {
-  const start = Date.now()
+  const t = withTimeout(outer, timeoutMs)
+  const { signal } = t
   let last: SceneStatus | null = null
-  for (;;) {
-    if (signal?.aborted) throw abortError()
-    const scene = await getScene(id, { signal })
-    if (signal?.aborted) throw abortError()
-    if (scene.status !== last) {
-      last = scene.status
-      onStatus?.(scene.status, scene)
+  try {
+    for (;;) {
+      if (signal.aborted) throw abortError()
+      const scene = await getScene(id, { signal })
+      if (signal.aborted) throw abortError()
+      if (scene.status !== last) {
+        last = scene.status
+        onStatus?.(scene.status, scene)
+      }
+      if (scene.status === 'READY' || scene.status === 'FAILED') return scene
+      await sleep(intervalMs, signal)
     }
-    if (scene.status === 'READY' || scene.status === 'FAILED') return scene
-    if (Date.now() - start + intervalMs > timeoutMs) throw new SceneTimeoutError(timeoutMs)
-    await sleep(intervalMs, signal)
+  } catch (e) {
+    throw t.translate(e)
+  } finally {
+    t.dispose()
   }
 }

@@ -1,13 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Timeline } from './timeline/Timeline'
 import { formatYear } from './lib/year'
 import { formatCoordinates, type Selection } from './location/coordinates'
+import { MapSection } from './location/MapSection'
 import { ScenePreview } from './scene/ScenePreview'
 import { ApiError, createScene, isAbortError, SceneTimeoutError, waitForScene, type SceneStatus } from './api/scenes'
 import './App.css'
-
-// maplibre-gl büyük olduğu için harita ayrı parçada yüklenir.
-const LocationPicker = lazy(() => import('./location/LocationPicker').then((m) => ({ default: m.LocationPicker })))
 
 const POLL_INTERVAL_MS = 1000
 const POLL_TIMEOUT_MS = 120_000
@@ -50,7 +48,8 @@ function phaseText(phase: Phase): string {
 function errorMessage(e: unknown): string {
   if (e instanceof ApiError) return e.message
   if (e instanceof SceneTimeoutError) return 'Üretim çok uzun sürdü, lütfen tekrar dene'
-  return 'Sunucuya ulaşılamadı'
+  if (e instanceof TypeError) return 'Sunucuya ulaşılamadı'
+  return 'Beklenmeyen bir hata oluştu'
 }
 
 export default function App() {
@@ -90,6 +89,8 @@ export default function App() {
       if (done.status === 'READY' && done.result) {
         setPreview({ src: done.result.panoramaUrl, year: req.year, location: { latitude: req.latitude, longitude: req.longitude } })
         setPhase({ kind: 'ready' })
+      } else if (done.status === 'READY') {
+        setPhase({ kind: 'error', message: 'Sunucu geçersiz sonuç döndü' })
       } else {
         setPhase({ kind: 'error', message: `Üretim başarısız: ${done.error ?? 'bilinmeyen hata'}` })
       }
@@ -113,9 +114,7 @@ export default function App() {
       </section>
 
       <section className="panel" aria-label="Konum">
-        <Suspense fallback={<p className="map-loading">Harita yükleniyor…</p>}>
-          <LocationPicker value={location} onChange={setLocation} />
-        </Suspense>
+        <MapSection value={location} onChange={setLocation} />
       </section>
 
       <section className="actions">

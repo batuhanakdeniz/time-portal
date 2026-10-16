@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   markerSetLngLat: vi.fn(),
   markerRemove: vi.fn(),
   fail: false,
+  setWorkerUrl: vi.fn(),
 }))
+
+vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?url', () => ({ default: '/assets/worker.mjs' }))
 
 vi.mock('maplibre-gl', () => {
   class Map {
@@ -35,7 +38,7 @@ vi.mock('maplibre-gl', () => {
       mocks.markerRemove()
     }
   }
-  return { Map, Marker }
+  return { Map, Marker, setWorkerUrl: mocks.setWorkerUrl }
 })
 
 import { LocationPicker } from './LocationPicker'
@@ -54,6 +57,14 @@ const lat = () => screen.getByLabelText('Enlem') as HTMLInputElement
 const lng = () => screen.getByLabelText('Boylam') as HTMLInputElement
 
 describe('LocationPicker', () => {
+  it('harita kurulmadan önce worker adresini bir kez ayarlar', () => {
+    render(<LocationPicker value={null} onChange={vi.fn()} />)
+    expect(mocks.setWorkerUrl).toHaveBeenCalledWith('/assets/worker.mjs')
+    cleanup()
+    render(<LocationPicker value={null} onChange={vi.fn()} />)
+    expect(mocks.setWorkerUrl).toHaveBeenCalledTimes(1)
+  })
+
   it('geçerli sayı girişi onChange çağırır', () => {
     const onChange = vi.fn()
     render(<LocationPicker value={null} onChange={onChange} />)
