@@ -1,0 +1,94 @@
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.app h1 {
+  margin: 0 0 4px;
+}
+
+.app header p {
+  margin: 0;
+  color: #9aa0b4;
+}
+
+.panel {
+  min-width: 0;
+}
+
+.map-loading {
+  margin: 0;
+  padding: 48px 0;
+  text-align: center;
+  color: #9aa0b4;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summary {
+  margin: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.generate {
+  align-self: stretch;
+  padding: 12px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0b0d14;
+  background: #8ab4ff;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.generate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status {
+  margin: 0;
+  min-height: 1.5em;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.status-ready {
+  color: #4ade80;
+}
+
+.status-error {
+  color: #f87171;
+}
+
+.scene-preview {
+  margin: 0;
+}
+
+.scene-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #151826;
+}
+
+.scene-preview figcaption {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #9aa0b4;
+  overflow-wrap: anywhere;
+}
