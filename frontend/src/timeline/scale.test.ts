@@ -46,16 +46,18 @@ describe('positionToYear', () => {
     for (let y = -300; y <= -1; y++) expect(positionToYear(yearToPosition(y))).toBe(y)
   })
   it('her konumda geçerli, monoton tamsayı yıl döner; asla 0 değil', () => {
+    // 200.001 nokta: kontroller düz JS'te, tek expect ile (1 milyon expect çağrısı CI'da zaman aşımına düşüyordu).
+    const violations: string[] = []
     let prev = MIN_YEAR
     for (let i = 0; i <= 200000; i++) {
       const y = positionToYear(i / 200000)
-      expect(Number.isInteger(y)).toBe(true)
-      expect(y).not.toBe(0)
-      expect(y).toBeGreaterThanOrEqual(MIN_YEAR)
-      expect(y).toBeLessThanOrEqual(MAX_YEAR)
-      expect(y).toBeGreaterThanOrEqual(prev)
+      if (!Number.isInteger(y) || y === 0 || y < MIN_YEAR || y > MAX_YEAR || y < prev) {
+        violations.push(`i=${i} y=${y} prev=${prev}`)
+        if (violations.length >= 5) break
+      }
       prev = y
     }
+    expect(violations).toEqual([])
   })
   it('yıl 0 konumu tutarlı biçimde 1 yılına çevrilir', () => {
     expect(positionToYear(yearToPosition(0))).toBe(1)
