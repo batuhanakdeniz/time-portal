@@ -42,18 +42,20 @@ Yanıt `202 Accepted`, `Location: /api/scenes/{id}`:
 }
 ```
 
-Hatalar: `400` (geçersiz ya da eksik alan).
+Hatalar: `400` (geçersiz ya da eksik alan); `503` + `Retry-After: 5` (saniye) başlığı ve `{"error": "..."}` gövdesi: aynı anda bekleyen+çalışan iş sayısı sınırına (`timeportal.jobs.max-active`, varsayılan 4) ulaşıldı. İstemci `Retry-After` kadar bekleyip yeniden dener.
 
 ## `GET /api/scenes/{id}` — durum ve sonuç
 
-`200` ve aynı gövde, ya da bilinmeyen kimlik için `404`.
+`200` ve aynı gövde, ya da bilinmeyen kimlik için `404`. Biten (`READY`/`FAILED`) işler bitişlerinden `timeportal.jobs.ttl` (varsayılan 1 saat) sonra bellekten silinir; sonrasında aynı kimlik `404` döner. `PENDING`/`RUNNING` işler silinmez. Bellekte en çok `timeportal.jobs.max-retained` (varsayılan 1000) biten iş tutulur; bu sayı aşılırsa en eski biten işler TTL dolmadan da `404` dönebilir.
 
 | `status` | Anlamı | `result` | `error` |
 |---|---|---|---|
 | `PENDING` | Sırada | `null` | `null` |
 | `RUNNING` | Üretiliyor | `null` | `null` |
 | `READY` | Hazır | dolu | `null` |
-| `FAILED` | Başarısız | `null` | mesaj |
+| `FAILED` | Başarısız | `null` | genel mesaj: `generation failed` |
+
+`FAILED` durumunda iç ayrıntı istemciye verilmez, yalnızca sunucu logunda tutulur.
 
 Geçişler: `PENDING → RUNNING → READY | FAILED`. İstemci `READY` ya da `FAILED` olana kadar kısa aralıklarla sorgular.
 
