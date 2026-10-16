@@ -3,9 +3,17 @@ package com.timeportal.scene;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,8 +33,33 @@ class SceneJobServiceTest {
 		}
 	}
 
+	/** Elle ilerletilen saat. */
+	static class MutableClock extends Clock {
+		Instant now = Instant.parse("2026-01-01T00:00:00Z");
+
+		@Override
+		public ZoneId getZone() {
+			return ZoneOffset.UTC;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			return now;
+		}
+
+		void advance(Duration d) {
+			now = now.plus(d);
+		}
+	}
+
 	private static final SceneRequest REQUEST = new SceneRequest(-44, 41.9, 12.5);
 	private static final SceneResult RESULT = new SceneResult("/api/samples/p.png", "/api/samples/d.png");
+	private static final Duration TTL = Duration.ofHours(1);
 
 	private ManualExecutor executor;
 
@@ -49,6 +82,7 @@ class SceneJobServiceTest {
 		assertThat(done.status()).isEqualTo(SceneStatus.READY);
 		assertThat(done.result()).isEqualTo(RESULT);
 		assertThat(done.error()).isNull();
+		assertThat(done.finishedAt()).isNotNull();
 	}
 
 	@Test
@@ -68,7 +102,7 @@ class SceneJobServiceTest {
 	}
 
 	@Test
-	void generatorFailureMarksJobFailed() {
+	void generatorFailureMarksJobFailedWithGenericMessage() {
 		SceneJobService service = new SceneJobService(request -> {
 			throw new IllegalStateException("servis kapalı");
 		}, executor);
@@ -79,7 +113,7 @@ class SceneJobServiceTest {
 		SceneJob failed = service.find(created.id()).orElseThrow();
 		assertThat(failed.status()).isEqualTo(SceneStatus.FAILED);
 		assertThat(failed.result()).isNull();
-		assertThat(failed.error()).contains("servis kapalı");
+		assertThat(failed.error()).isEqualTo("generation failed").doesNotContain("servis kapalı");
 	}
 
 	@Test
@@ -93,7 +127,7 @@ class SceneJobServiceTest {
 
 		SceneJob failed = service.find(created.id()).orElseThrow();
 		assertThat(failed.status()).isEqualTo(SceneStatus.FAILED);
-		assertThat(failed.error()).contains("adapter");
+		assertThat(failed.error()).isEqualTo("generation failed");
 	}
 
 	@Test
@@ -114,11 +148,115 @@ class SceneJobServiceTest {
 
 	@Test
 	void illegalTransitionsAreRejected() {
-		SceneJob pending = SceneJob.pending("a", REQUEST, java.time.Instant.now());
-		assertThatThrownBy(() -> pending.ready(RESULT)).isInstanceOf(IllegalStateException.class);
-		assertThatThrownBy(() -> pending.failed("x")).isInstanceOf(IllegalStateException.class);
+		Instant now = Instant.now();
+		SceneJob pending = SceneJob.pending("a", REQUEST, now);
+		assertThatThrownBy(() -> pending.ready(RESULT, now)).isInstanceOf(IllegalStateException.class);
+		assertThatThrownBy(() -> pending.failed("x", now)).isInstanceOf(IllegalStateException.class);
 
-		SceneJob ready = pending.running().ready(RESULT);
+		SceneJob ready = pending.running().ready(RESULT, now);
 		assertThatThrownBy(ready::running).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void finishedJobsAreRemovedAfterTtl() {
+		MutableClock clock = new MutableClock();
+		SceneJobService service = new SceneJobService(request -> {
+			if (request.year() == 1) {
+				throw new IllegalStateException("x");
+			}
+			return RESULT;
+		}, executor, clock, TTL, 10);
+		String ready = service.create(REQUEST).id();
+		String failed = service.create(new SceneRequest(1, 1, 1)).id();
+		executor.runNext();
+		executor.runNext();
+		assertThat(service.find(ready).orElseThrow().status()).isEqualTo(SceneStatus.READY);
+		assertThat(service.find(failed).orElseThrow().status()).isEqualTo(SceneStatus.FAILED);
+
+		clock.advance(TTL.minusSeconds(1));
+		assertThat(service.find(ready)).isPresent();
+
+		clock.advance(Duration.ofSeconds(1));
+		assertThat(service.find(ready)).isEmpty();
+		assertThat(service.find(failed)).isEmpty();
+
+		service.create(REQUEST);
+		assertThat(service.size()).isEqualTo(1);
+	}
+
+	@Test
+	void pendingAndRunningJobsAreNeverRemoved() {
+		MutableClock clock = new MutableClock();
+		SceneJobService[] holder = new SceneJobService[1];
+		String[] id = new String[1];
+		boolean[] runningSurvived = new boolean[1];
+		holder[0] = new SceneJobService(request -> {
+			clock.advance(Duration.ofDays(2));
+			holder[0].sweep();
+			runningSurvived[0] = holder[0].find(id[0]).isPresent();
+			return RESULT;
+		}, executor, clock, TTL, 10);
+		id[0] = holder[0].create(REQUEST).id();
+		String pending = holder[0].create(REQUEST).id();
+
+		clock.advance(Duration.ofDays(1));
+		holder[0].sweep();
+		assertThat(holder[0].find(id[0])).isPresent();
+		assertThat(holder[0].find(pending)).isPresent();
+
+		executor.runNext();
+		assertThat(runningSurvived[0]).isTrue();
+		// TTL bitiş anından sayılır, oluşturulma anından değil.
+		assertThat(holder[0].find(id[0])).isPresent();
+	}
+
+	@Test
+	void capacityIsLimitedAndFreedWhenJobFinishes() {
+		SceneJobService service = new SceneJobService(request -> RESULT, executor, Clock.systemUTC(), TTL, 2);
+		service.create(REQUEST);
+		service.create(REQUEST);
+		assertThatThrownBy(() -> service.create(REQUEST))
+				.isInstanceOfSatisfying(SceneCapacityException.class,
+						e -> assertThat(e.retryAfterSeconds()).isPositive());
+
+		executor.runNext();
+		assertThat(service.create(REQUEST)).isNotNull();
+	}
+
+	@Test
+	void slotIsReleasedWhenGeneratorFails() {
+		SceneJobService service = new SceneJobService(request -> {
+			throw new NoClassDefFoundError("x");
+		}, executor, Clock.systemUTC(), TTL, 1);
+		service.create(REQUEST);
+		assertThatThrownBy(() -> service.create(REQUEST)).isInstanceOf(SceneCapacityException.class);
+
+		executor.runNext();
+		service.create(REQUEST);
+		executor.runNext();
+		service.create(REQUEST);
+	}
+
+	@Test
+	void slotIsReleasedWhenExecutorRejects() {
+		Executor rejecting = command -> {
+			throw new RejectedExecutionException("kapalı");
+		};
+		SceneJobService service = new SceneJobService(request -> RESULT, rejecting, Clock.systemUTC(), TTL, 1);
+		assertThatThrownBy(() -> service.create(REQUEST)).isInstanceOf(RejectedExecutionException.class);
+		assertThatThrownBy(() -> service.create(REQUEST)).isInstanceOf(RejectedExecutionException.class);
+		assertThat(service.size()).isZero();
+	}
+
+	@Test
+	void shutdownClosesOwnedExecutorOnly() {
+		ExecutorService owned = Executors.newSingleThreadExecutor();
+		new SceneJobService(request -> RESULT, owned, owned, Clock.systemUTC(), TTL, 1).shutdown();
+		assertThat(owned.isShutdown()).isTrue();
+
+		ExecutorService borrowed = Executors.newSingleThreadExecutor();
+		new SceneJobService(request -> RESULT, borrowed, null, Clock.systemUTC(), TTL, 1).shutdown();
+		assertThat(borrowed.isShutdown()).isFalse();
+		borrowed.shutdown();
 	}
 }
