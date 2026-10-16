@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FULL_VIEW, yearToPosition } from './scale'
 import type { View } from './scale'
-import { computeTicks } from './ticks'
+import { computeTicks, estimateLabelWidth, labelBox } from './ticks'
 
 const between = (a: number, b: number): View => ({ start: yearToPosition(a), end: yearToPosition(b) })
 
@@ -48,5 +48,13 @@ describe('computeTicks', () => {
       if (px < 48) expect(x.align).toBe('start')
       if (px > 552) expect(x.align).toBe('end')
     }
+  })
+})
+
+describe('etiket çakışması', () => {
+  it.each([320, 375, 540, 720, 1000])('tam görünümde %ipx genişlikte hiçbir iki etiketin kutusu çakışmaz', (width) => {
+    const ticks = computeTicks(FULL_VIEW, width)
+    const boxes = ticks.map((t) => labelBox((t.left / 100) * width, estimateLabelWidth(t.year), t.align))
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i][0]).toBeGreaterThanOrEqual(boxes[i - 1][1])
   })
 })

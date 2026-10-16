@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Map as MapLibreMap, Marker } from 'maplibre-gl'
+import { Map as MapLibreMap, Marker, setWorkerUrl } from 'maplibre-gl'
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { formatCoordinates, toSelection, type Selection } from './coordinates'
 import './LocationPicker.css'
@@ -20,6 +21,14 @@ function parseField(text: string, min: number, max: number): number | null {
   if (text.trim() === '') return null
   const n = Number(text)
   return Number.isFinite(n) && n >= min && n <= max ? n : null
+}
+
+// Vite worker dosyasını kendiliğinden çıktıya koymaz; adresi açıkça veriyoruz.
+let workerUrlSet = false
+function ensureWorkerUrl() {
+  if (workerUrlSet) return
+  workerUrlSet = true
+  setWorkerUrl(workerUrl)
 }
 
 export function LocationPicker({ value, onChange }: Props) {
@@ -45,6 +54,7 @@ export function LocationPicker({ value, onChange }: Props) {
     if (!containerRef.current) return
     let map: MapLibreMap
     try {
+      ensureWorkerUrl()
       map = new MapLibreMap({ container: containerRef.current, style: MAP_STYLE_URL, center: [0, 20], zoom: 1 })
       let styleLoaded = false
       map.on('load', () => {

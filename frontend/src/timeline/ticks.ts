@@ -1,4 +1,4 @@
-import { MAX_YEAR } from '../lib/year'
+import { formatYear, MAX_YEAR } from '../lib/year'
 import { PRESENT_YEAR, positionToYear, yearToPosition } from './scale'
 import type { View } from './scale'
 
@@ -32,6 +32,19 @@ function coarsestNiceYear(lo: number, hi: number): number | null {
  * her dilimde o dilimin yerel yıl aralığına uygun en kaba 1-2-5·10^k yılı seçilir.
  * Etiketler en az minGapPx arayla, artan sırada; yıl 0 asla yok; günümüz (2026) görünürse önceliklidir.
  */
+/** Etiket genişliği tahmini (piksel): karakter başına ~7px. */
+export const CHAR_PX = 7
+const LABEL_PAD_PX = 8
+
+export function estimateLabelWidth(year: number): number {
+  return formatYear(year).length * CHAR_PX
+}
+
+/** Etiketin gerçekte kapladığı [sol, sağ] aralığı (hizalamaya göre). */
+export function labelBox(x: number, width: number, align: Tick['align']): [number, number] {
+  return align === 'start' ? [x, x + width] : align === 'end' ? [x - width, x] : [x - width / 2, x + width / 2]
+}
+
 export function computeTicks(view: View, width: number, minGapPx = 72, edgePx = 48): Tick[] {
   const span = view.end - view.start
   const slots = Math.max(1, Math.floor(width / minGapPx))
@@ -45,10 +58,15 @@ export function computeTicks(view: View, width: number, minGapPx = 72, edgePx = 
     if (year !== null) candidates.push(year)
   }
 
-  const kept: { year: number; x: number }[] = []
+  const alignOf = (x: number): Tick['align'] => (x < edgePx ? 'start' : x > width - edgePx ? 'end' : 'center')
+  const kept: { year: number; x: number; box: [number, number] }[] = []
   const tryAdd = (year: number) => {
     const x = xOf(year)
-    if (kept.every((k) => Math.abs(k.x - x) >= minGapPx)) kept.push({ year, x })
+    const box = labelBox(x, estimateLabelWidth(year), alignOf(x))
+    const fits = kept.every(
+      (k) => Math.abs(k.x - x) >= minGapPx && (box[1] + LABEL_PAD_PX <= k.box[0] || k.box[1] + LABEL_PAD_PX <= box[0]),
+    )
+    if (fits) kept.push({ year, x, box })
   }
   const presentPos = yearToPosition(PRESENT_YEAR)
   if (presentPos >= view.start && presentPos <= view.end) tryAdd(PRESENT_YEAR)
@@ -59,6 +77,6 @@ export function computeTicks(view: View, width: number, minGapPx = 72, edgePx = 
     .map(({ year, x }) => ({
       year,
       left: (x / width) * 100,
-      align: x < edgePx ? 'start' : x > width - edgePx ? 'end' : 'center',
+      align: alignOf(x),
     }))
 }
