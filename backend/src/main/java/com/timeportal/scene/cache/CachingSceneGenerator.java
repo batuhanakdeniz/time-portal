@@ -1,0 +1,93 @@
+package com.timeportal.scene.cache;
+
+import com.timeportal.scene.SceneGenerator;
+import com.timeportal.scene.SceneRequest;
+import com.timeportal.scene.SceneResult;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Üreticinin önüne konan önbellek. Aynı {@link SceneCacheKey} için önceki başarılı sonucu döner.
+ *
+ * <p>Başarısız üretimler (istisna) saklanmaz ve istisna çağırana aynen yayılır. Boyut sınırlıdır
+ * (LRU: en az yakın zamanda kullanılan düşer). Aynı anahtar için eşzamanlı istekler tek üretime
+ * katılır (single-flight): ilk istek üretir, diğerleri sonucu (ya da aynı istisnayı) bekler.
+ * Üretim pahalı ve gerçek servis kotalı olduğu için çift üretimi önlemeye değer.
+ */
+public class CachingSceneGenerator implements SceneGenerator {
+
+	private final SceneGenerator delegate;
+	private final Map<SceneCacheKey, SceneResult> cache;
+	private final Map<SceneCacheKey, CompletableFuture<SceneResult>> inFlight = new ConcurrentHashMap<>();
+
+	public CachingSceneGenerator(SceneGenerator delegate, int maxEntries) {
+		if (maxEntries < 1) {
+			throw new IllegalArgumentException("maxEntries must be at least 1");
+		}
+		this.delegate = delegate;
+		// access-order LinkedHashMap; tüm erişimler cache üzerinde senkronize.
+		this.cache = new LinkedHashMap<>(16, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<SceneCacheKey, SceneResult> eldest) {
+				return size() > maxEntries;
+			}
+		};
+	}
+
+	@Override
+	public SceneResult generate(SceneRequest request) {
+		SceneCacheKey key = SceneCacheKey.of(request);
+		SceneResult cached = lookup(key);
+		if (cached != null) {
+			return cached;
+		}
+		CompletableFuture<SceneResult> mine = new CompletableFuture<>();
+		CompletableFuture<SceneResult> existing = inFlight.putIfAbsent(key, mine);
+		if (existing != null) {
+			return await(existing);
+		}
+		try {
+			// Başka bir iş arada bitirip kaydetmiş olabilir.
+			SceneResult result = lookup(key);
+			if (result == null) {
+				result = delegate.generate(request);
+				synchronized (cache) {
+					cache.put(key, result);
+				}
+			}
+			mine.complete(result);
+			return result;
+		}
+		catch (RuntimeException | Error e) {
+			mine.completeExceptionally(e);
+			throw e;
+		}
+		finally {
+			inFlight.remove(key);
+		}
+	}
+
+	private SceneResult lookup(SceneCacheKey key) {
+		synchronized (cache) {
+			return cache.get(key);
+		}
+	}
+
+	private static SceneResult await(CompletableFuture<SceneResult> future) {
+		try {
+			return future.join();
+		}
+		catch (CompletionException e) {
+			if (e.getCause() instanceof RuntimeException re) {
+				throw re;
+			}
+			if (e.getCause() instanceof Error err) {
+				throw err;
+			}
+			throw e;
+		}
+	}
+}
