@@ -234,7 +234,129 @@ class SceneJobServiceTest {
 		executor.runNext();
 		service.create(REQUEST);
 		executor.runNext();
+		assertThat(service.availableSlots()).isEqualTo(1);
 		service.create(REQUEST);
+		assertThat(service.availableSlots()).isZero();
+	}
+
+	@Test
+	void retainedFinishedJobsAreCappedOldestFirst() {
+		MutableClock clock = new MutableClock();
+		SceneJobService service = new SceneJobService(request -> RESULT, executor, clock, TTL, 10, 3);
+		String[] ids = new String[5];
+		for (int i = 0; i < 5; i++) {
+			ids[i] = service.create(REQUEST).id();
+			executor.runNext();
+			clock.advance(Duration.ofSeconds(1));
+		}
+		String latest = service.create(REQUEST).id();
+
+		assertThat(service.find(ids[0])).isEmpty();
+		assertThat(service.find(ids[1])).isEmpty();
+		assertThat(service.find(ids[2])).isPresent();
+		assertThat(service.find(ids[3])).isPresent();
+		assertThat(service.find(ids[4])).isPresent();
+		assertThat(service.find(latest)).isPresent();
+	}
+
+	@Test
+	void retentionCapNeverRemovesActiveJobs() {
+		SceneJobService service = new SceneJobService(request -> RESULT, executor, new MutableClock(), TTL, 10, 1);
+		String[] ids = new String[4];
+		for (int i = 0; i < 4; i++) {
+			ids[i] = service.create(REQUEST).id();
+		}
+		for (String id : ids) {
+			assertThat(service.find(id)).isPresent();
+		}
+	}
+
+	@Test
+	void ttlSweepIsThrottled() {
+		MutableClock clock = new MutableClock();
+		SceneJobService service = new SceneJobService(request -> RESULT, executor, clock, Duration.ofSeconds(10), 10,
+				100);
+		service.create(REQUEST);
+		executor.runNext();
+		clock.advance(Duration.ofSeconds(11));
+		service.create(REQUEST);
+		// Süpürme aralığı (30 sn) dolmadı: eski iş map'te kalır ama find yok sayar.
+		assertThat(service.size()).isEqualTo(2);
+		clock.advance(Duration.ofSeconds(SceneJobService.SWEEP_INTERVAL_SECONDS));
+		service.create(REQUEST);
+		assertThat(service.size()).isEqualTo(2);
+	}
+
+	@Test
+	void slotIsReleasedOnlyOnceWithSynchronousExecutor() {
+		MutableClock clock = new MutableClock();
+		boolean[] breakClock = new boolean[1];
+		Clock flaky = new Clock() {
+			@Override
+			public ZoneId getZone() {
+				return ZoneOffset.UTC;
+			}
+
+			@Override
+			public Clock withZone(ZoneId zone) {
+				return this;
+			}
+
+			@Override
+			public Instant instant() {
+				if (breakClock[0]) {
+					throw new IllegalStateException("saat bozuk");
+				}
+				return clock.instant();
+			}
+		};
+		// run() bitişte clock.instant() çağırır; senkron executor hatayı create'e taşır.
+		Executor sync = command -> {
+			breakClock[0] = true;
+			try {
+				command.run();
+			}
+			finally {
+				breakClock[0] = false;
+			}
+		};
+		SceneJobService service = new SceneJobService(request -> RESULT, sync, flaky, TTL, 2);
+		assertThatThrownBy(() -> service.create(REQUEST)).isInstanceOf(IllegalStateException.class);
+		assertThat(service.availableSlots()).isEqualTo(2);
+		assertThat(service.size()).isZero();
+	}
+
+	@Test
+	void interruptFlagIsRestoredWhenGeneratorThrowsInterruptedException() {
+		SceneJobService service = new SceneJobService(request -> {
+			SceneJobServiceTest.<RuntimeException>sneaky(new InterruptedException("kes"));
+			return RESULT;
+		}, Runnable::run);
+		try {
+			SceneJob created = service.create(REQUEST);
+			assertThat(Thread.currentThread().isInterrupted()).isTrue();
+			assertThat(service.find(created.id()).orElseThrow().status()).isEqualTo(SceneStatus.FAILED);
+		}
+		finally {
+			Thread.interrupted();
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <E extends Throwable> void sneaky(Throwable t) throws E {
+		throw (E) t;
+	}
+
+	@Test
+	void invalidConfigurationIsRejected() {
+		for (Duration bad : new Duration[] {Duration.ZERO, Duration.ofSeconds(-1)}) {
+			assertThatThrownBy(() -> new SceneJobService(request -> RESULT, executor, Clock.systemUTC(), bad, 1, 1))
+					.isInstanceOf(IllegalArgumentException.class);
+		}
+		assertThatThrownBy(() -> new SceneJobService(request -> RESULT, executor, Clock.systemUTC(), TTL, 1, 0))
+				.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new SceneJobService(request -> RESULT, executor, Clock.systemUTC(), TTL, 0))
+				.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -251,11 +373,11 @@ class SceneJobServiceTest {
 	@Test
 	void shutdownClosesOwnedExecutorOnly() {
 		ExecutorService owned = Executors.newSingleThreadExecutor();
-		new SceneJobService(request -> RESULT, owned, owned, Clock.systemUTC(), TTL, 1).shutdown();
+		new SceneJobService(request -> RESULT, owned, owned, Clock.systemUTC(), TTL, 1, 10).shutdown();
 		assertThat(owned.isShutdown()).isTrue();
 
 		ExecutorService borrowed = Executors.newSingleThreadExecutor();
-		new SceneJobService(request -> RESULT, borrowed, null, Clock.systemUTC(), TTL, 1).shutdown();
+		new SceneJobService(request -> RESULT, borrowed, null, Clock.systemUTC(), TTL, 1, 10).shutdown();
 		assertThat(borrowed.isShutdown()).isFalse();
 		borrowed.shutdown();
 	}

@@ -46,7 +46,7 @@ Hatalar: `400` (geçersiz ya da eksik alan); `503` + `Retry-After: 5` (saniye) b
 
 ## `GET /api/scenes/{id}` — durum ve sonuç
 
-`200` ve aynı gövde, ya da bilinmeyen kimlik için `404`. Biten (`READY`/`FAILED`) işler bitişlerinden `timeportal.jobs.ttl` (varsayılan 1 saat) sonra bellekten silinir; sonrasında aynı kimlik `404` döner. `PENDING`/`RUNNING` işler silinmez.
+`200` ve aynı gövde, ya da bilinmeyen kimlik için `404`. Biten (`READY`/`FAILED`) işler bitişlerinden `timeportal.jobs.ttl` (varsayılan 1 saat) sonra bellekten silinir; sonrasında aynı kimlik `404` döner. `PENDING`/`RUNNING` işler silinmez. Bellekte en çok `timeportal.jobs.max-retained` (varsayılan 1000) biten iş tutulur; bu sayı aşılırsa en eski biten işler TTL dolmadan da `404` dönebilir.
 
 | `status` | Anlamı | `result` | `error` |
 |---|---|---|---|

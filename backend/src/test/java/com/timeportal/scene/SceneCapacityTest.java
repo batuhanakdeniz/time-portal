@@ -12,7 +12,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(properties = {"timeportal.jobs.max-active=1", "timeportal.fake-generator.delay-ms=1500"})
+@SpringBootTest(properties = {"timeportal.jobs.max-active=1", "timeportal.fake-generator.delay-ms=5000"})
 @AutoConfigureMockMvc
 class SceneCapacityTest {
 
