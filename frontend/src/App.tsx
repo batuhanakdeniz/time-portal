@@ -3,7 +3,7 @@ import { Timeline } from './timeline/Timeline'
 import { formatYear } from './lib/year'
 import { formatCoordinates, type Selection } from './location/coordinates'
 import { MapSection } from './location/MapSection'
-import { ScenePreview } from './scene/ScenePreview'
+import { ViewerSection } from './scene/ViewerSection'
 import { ApiError, createScene, isAbortError, SceneTimeoutError, waitForScene, type SceneStatus } from './api/scenes'
 import './App.css'
 
@@ -129,7 +129,7 @@ export default function App() {
 
       {preview && (
         <section className="result">
-          <ScenePreview src={preview.src} caption={`Üretilen panorama: ${previewCaption}`} />
+          <ViewerSection src={preview.src} alt={`Üretilen panorama: ${previewCaption}`} />
         </section>
       )}
     </main>
