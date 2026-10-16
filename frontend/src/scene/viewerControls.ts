@@ -16,8 +16,16 @@ export const FOV_DEFAULT = 75
 export const KEY_YAW_STEP = 5
 export const KEY_PITCH_STEP = 5
 export const KEY_FOV_STEP = 5
-/** Tekerlek delta birimi başına FOV değişimi (derece). */
-export const WHEEL_FOV_PER_UNIT = 0.05
+/** Tekerlek delta birimi başına FOV'un üssel değişimi (fare tekerleği ~100/çentik, trackpad çimdiği ~1–20/olay). */
+export const WHEEL_ZOOM_RATE = 0.003
+/**
+ * İlk bakış panoramanın ortasına (u=0.5) baksın diye yaw'a eklenen sabit ofset.
+ * İçe dönük küre x'te aynalandığı için yaw=0 (kamera -z) dokunun u=0.75'ine bakar;
+ * -90° ofsetle kamera -x'e, yani u=0.5'e bakar. Sağa dönünce (yaw artınca) u artar.
+ */
+export const YAW_OFFSET = -90
+export const MOBILE_MAX_TEXTURE_WIDTH = 4096
+export const DESKTOP_MAX_TEXTURE_WIDTH = 8192
 
 export const DEFAULT_VIEW: ViewState = { yaw: 0, pitch: 0, fov: FOV_DEFAULT }
 
@@ -51,9 +59,31 @@ export function applyDrag(view: ViewState, dxPx: number, dyPx: number, viewportH
   return normalizeView({ ...view, yaw: view.yaw - dxPx * k, pitch: view.pitch + dyPx * k })
 }
 
-/** Tekerlek: deltaY > 0 uzaklaşır (FOV artar). */
+/** Tekerlek: deltaY > 0 uzaklaşır (FOV artar). Üssel: küçük trackpad deltaları da akıcı çalışır. */
 export function applyWheel(view: ViewState, deltaY: number): ViewState {
-  return normalizeView({ ...view, fov: view.fov + deltaY * WHEEL_FOV_PER_UNIT })
+  return normalizeView({ ...view, fov: view.fov * Math.exp(deltaY * WHEEL_ZOOM_RATE) })
+}
+
+/** Görünümden kamera dönüşü (radyan, Euler sırası 'YXZ'). */
+export function cameraRotation(view: ViewState): { x: number; y: number } {
+  const rad = Math.PI / 180
+  return { x: view.pitch * rad, y: -(view.yaw + YAW_OFFSET) * rad }
+}
+
+/** Kameranın baktığı yatay doku koordinatı u [0,1). SphereGeometry(-1,1,1 ölçekli) için: x=cosφ·sinθ, z=sinφ·sinθ, u=φ/2π. */
+export function horizontalTextureU(view: ViewState): number {
+  const { y } = cameraRotation(view)
+  const x = -Math.sin(y)
+  const z = -Math.cos(y)
+  const u = Math.atan2(z, x) / (2 * Math.PI)
+  const wrapped = ((u % 1) + 1) % 1
+  return Math.round(wrapped * 1e9) / 1e9 % 1
+}
+
+/** Panorama genişliğini (2:1) cihaza göre sınırlar: mobilde ≤4096, masaüstünde ≤min(GPU, 8192). */
+export function chooseTextureWidth(imageWidth: number, gpuMaxTextureSize: number, isMobile: boolean): number {
+  const cap = Math.min(gpuMaxTextureSize, isMobile ? MOBILE_MAX_TEXTURE_WIDTH : DESKTOP_MAX_TEXTURE_WIDTH)
+  return Math.max(1, Math.min(Math.floor(imageWidth), cap))
 }
 
 /** Çimdik: ratio = yeni parmak aralığı / eski aralık; >1 yakınlaştırır. */

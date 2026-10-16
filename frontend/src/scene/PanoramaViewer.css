@@ -20,6 +20,35 @@
   outline-offset: 2px;
 }
 
+/* Tam ekranda 2:1 kutu kuralı geçerli değil; tuval tüm ekranı kaplar. */
+.panorama-surface:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.panorama-surface:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.panorama-fullscreen {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #e6e8f0;
+  background: rgba(28, 32, 51, 0.85);
+  border: 1px solid #2c3250;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
 .panorama-overlay {
   position: absolute;
   inset: 0;
@@ -36,8 +65,7 @@
   color: #f87171;
 }
 
-.panorama-help,
-.panorama-notice {
+.panorama-help {
   margin: 8px 0 0;
   font-size: 13px;
   color: #9aa0b4;

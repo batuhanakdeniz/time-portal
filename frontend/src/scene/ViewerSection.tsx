@@ -1,5 +1,6 @@
 import { Component, lazy, Suspense, type ComponentType, type ReactNode } from 'react'
 import { ScenePreview } from './ScenePreview'
+import './ViewerSection.css'
 
 export interface ViewerProps {
   src: string
@@ -27,7 +28,17 @@ export function ViewerSection({ src, alt, loader }: ViewerProps & { loader?: Loa
   // Her bileşen örneği için tek lazy bileşeni; loader yalnızca test içindir.
   const Viewer = loader ? lazyFor(loader) : DefaultViewer
   return (
-    <ErrorBoundary key={src} fallback={<ScenePreview src={src} caption={alt} />}>
+    <ErrorBoundary
+      key={src}
+      fallback={
+        <div className="panorama-fallback">
+          <p className="panorama-notice" role="status">
+            3B görüntüleyici yüklenemedi, düz önizleme gösteriliyor
+          </p>
+          <ScenePreview src={src} caption={alt} />
+        </div>
+      }
+    >
       <Suspense fallback={<p className="preview-loading">3B görüntüleyici yükleniyor…</p>}>
         <Viewer src={src} alt={alt} />
       </Suspense>

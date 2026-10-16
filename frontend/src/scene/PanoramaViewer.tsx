@@ -1,18 +1,21 @@
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { LinearFilter, SphereGeometry, SRGBColorSpace, TextureLoader, type PerspectiveCamera, type Texture } from 'three'
+import { LinearFilter, LinearMipmapLinearFilter, SphereGeometry, SRGBColorSpace, TextureLoader, type PerspectiveCamera, type Texture } from 'three'
 import { ScenePreview } from './ScenePreview'
 import {
   applyDrag,
   applyKey,
   applyPinch,
   applyWheel,
+  cameraRotation,
+  chooseTextureWidth,
   DEFAULT_VIEW,
   FOV_DEFAULT,
   HANDLED_KEYS,
   type ViewState,
 } from './viewerControls'
 import './PanoramaViewer.css'
+import './ViewerSection.css'
 
 interface Props {
   src: string
@@ -20,16 +23,74 @@ interface Props {
   alt: string
 }
 
-const DEG = Math.PI / 180
-const HELP_TEXT = 'Sürükle ya da ok tuşlarını kullan; tekerlek, çimdik ya da + / - ile yakınlaş.'
+const HELP_TEXT = 'Sürükle ya da ok tuşlarını kullan; Ctrl + tekerlek, çimdik ya da + / - ile yakınlaş.'
 
-export function isWebGLAvailable(): boolean {
+interface WebGLProbe {
+  available: boolean
+  maxTextureSize: number
+}
+let probeCache: WebGLProbe | null = null
+
+/** WebGL sondası; sonuç önbelleğe alınır ve sonda context'i hemen bırakır. */
+export function probeWebGL(): WebGLProbe {
+  if (probeCache) return probeCache
+  let result: WebGLProbe = { available: false, maxTextureSize: 0 }
   try {
     const canvas = document.createElement('canvas')
-    return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'))
+    const gl = (canvas.getContext('webgl2') || canvas.getContext('webgl')) as WebGLRenderingContext | null
+    if (gl) {
+      const max = typeof gl.getParameter === 'function' ? Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) : 0
+      result = { available: true, maxTextureSize: Number.isFinite(max) && max > 0 ? max : 4096 }
+      gl.getExtension?.('WEBGL_lose_context')?.loseContext()
+    }
+  } catch {
+    // sonda başarısız: WebGL yok say
+  }
+  probeCache = result
+  return result
+}
+
+export function isWebGLAvailable(): boolean {
+  return probeWebGL().available
+}
+
+/** Yalnızca testler için. */
+export function resetWebGLProbe() {
+  probeCache = null
+}
+
+function isMobileDevice(): boolean {
+  try {
+    return window.matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
   } catch {
     return false
   }
+}
+
+/** Görüntü hedef genişlikten büyükse 2:1 oranını koruyarak küçültür (canvas; flipY ile uyumlu). */
+function downscale(image: { width: number; height: number }, width: number): unknown {
+  if (image.width <= width) return image
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = Math.max(1, Math.round((image.height * width) / image.width))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return image
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(image as unknown as CanvasImageSource, 0, 0, canvas.width, canvas.height)
+  return canvas
+}
+
+type FullscreenEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void }
+type FullscreenDoc = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void }
+
+function fullscreenSupported(): boolean {
+  const el = document.documentElement as FullscreenEl
+  return typeof el.requestFullscreen === 'function' || typeof el.webkitRequestFullscreen === 'function'
+}
+
+function currentFullscreenElement(): Element | null {
+  const d = document as FullscreenDoc
+  return d.fullscreenElement ?? d.webkitFullscreenElement ?? null
 }
 
 function FlatFallback({ src, alt }: Props) {
@@ -78,10 +139,15 @@ function useTexture(src: string): TextureState {
           texture.dispose()
           return
         }
+        const image = texture.image as { width?: number; height?: number } | undefined
+        if (image?.width && image.height) {
+          const width = chooseTextureWidth(image.width, probeWebGL().maxTextureSize || 4096, isMobileDevice())
+          texture.image = downscale(image as { width: number; height: number }, width) as HTMLImageElement
+        }
         texture.colorSpace = SRGBColorSpace
-        // Mipmap yok: eşit olmayan boyutlarda ve dikiş çevresinde artefakt/bellek maliyeti olmasın.
-        texture.generateMipmaps = false
-        texture.minFilter = LinearFilter
+        // WebGL2'de 2'nin kuvveti şartı yok; mipmap uzaktan görünümde titremeyi azaltır.
+        texture.generateMipmaps = true
+        texture.minFilter = LinearMipmapLinearFilter
         texture.magFilter = LinearFilter
         loaded = texture
         setState({ status: 'ready', texture })
@@ -104,11 +170,12 @@ function CameraRig({ view }: { view: ViewState }) {
   const invalidate = useThree((s) => s.invalidate)
   useLayoutEffect(() => {
     camera.rotation.order = 'YXZ'
-    camera.rotation.set(view.pitch * DEG, -view.yaw * DEG, 0)
+    const r = cameraRotation(view)
+    camera.rotation.set(r.x, r.y, 0)
     camera.fov = view.fov
     camera.updateProjectionMatrix()
     invalidate()
-  }, [camera, invalidate, view.yaw, view.pitch, view.fov])
+  }, [camera, invalidate, view])
   return null
 }
 
@@ -128,12 +195,16 @@ function Viewer({ src, alt }: Props) {
   const texture = useTexture(src)
   const surfaceRef = useRef<HTMLDivElement>(null)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const [fsSupported] = useState(fullscreenSupported)
+  const [fullscreen, setFullscreen] = useState(false)
 
-  // Tekerlek dinleyicisi passive olmamalı ki sayfa kaymasını engelleyebilelim.
+  // Tekerlek dinleyicisi passive olmamalı ki Ctrl+tekerlekte sayfa yakınlaşmasını engelleyebilelim.
   useEffect(() => {
     const el = surfaceRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
+      // Düz tekerlek sayfayı kaydırır; Ctrl/⌘ (ve trackpad çimdiği, ctrlKey'li gelir) yakınlaştırır.
+      if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY
       setView((v) => applyWheel(v, delta))
@@ -142,7 +213,29 @@ function Viewer({ src, alt }: Props) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
+  useEffect(() => {
+    const sync = () => setFullscreen(!!surfaceRef.current && currentFullscreenElement() === surfaceRef.current)
+    document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('webkitfullscreenchange', sync)
+    return () => {
+      document.removeEventListener('fullscreenchange', sync)
+      document.removeEventListener('webkitfullscreenchange', sync)
+    }
+  }, [])
+
+  const toggleFullscreen = () => {
+    const el = surfaceRef.current as FullscreenEl | null
+    if (!el) return
+    const d = document as FullscreenDoc
+    if (currentFullscreenElement()) {
+      void (d.exitFullscreen ? d.exitFullscreen() : d.webkitExitFullscreen?.())
+    } else {
+      void (el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen?.())
+    }
+  }
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     try {
       e.currentTarget.setPointerCapture(e.pointerId)
     } catch {
@@ -175,6 +268,8 @@ function Viewer({ src, alt }: Props) {
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Ctrl/⌘/Alt'li kombinasyonlar tarayıcıya aittir (tarayıcı yakınlaştırması, geri gitme).
+    if (e.ctrlKey || e.metaKey || e.altKey) return
     if (!HANDLED_KEYS.includes(e.key)) return
     e.preventDefault()
     setView((v) => applyKey(v, e.key))
@@ -195,6 +290,7 @@ function Viewer({ src, alt }: Props) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
         onPointerCancel={onPointerEnd}
+        onLostPointerCapture={onPointerEnd}
         onKeyDown={onKeyDown}
       >
         <Canvas
@@ -206,6 +302,17 @@ function Viewer({ src, alt }: Props) {
           <CameraRig view={view} />
           {texture.status === 'ready' && <PanoramaSphere texture={texture.texture} />}
         </Canvas>
+        {fsSupported && (
+          <button
+            type="button"
+            className="panorama-fullscreen"
+            aria-pressed={fullscreen}
+            onClick={toggleFullscreen}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {fullscreen ? 'Tam ekrandan çık' : 'Tam ekran'}
+          </button>
+        )}
         {texture.status === 'loading' && <p className="panorama-overlay">Panorama yükleniyor…</p>}
         {texture.status === 'error' && (
           <p className="panorama-overlay is-error" role="alert">

@@ -4,6 +4,11 @@ import {
   applyKey,
   applyPinch,
   applyWheel,
+  cameraRotation,
+  chooseTextureWidth,
+  horizontalTextureU,
+  WHEEL_ZOOM_RATE,
+  YAW_OFFSET,
   clampFov,
   clampPitch,
   degreesPerPixel,
@@ -72,8 +77,9 @@ describe('sürükleme', () => {
 
 describe('tekerlek ve çimdik', () => {
   it('tekerlek FOV değiştirir ve sınırlar', () => {
-    expect(applyWheel(DEFAULT_VIEW, 100).fov).toBeCloseTo(80)
-    expect(applyWheel(DEFAULT_VIEW, -100).fov).toBeCloseTo(70)
+    expect(applyWheel(DEFAULT_VIEW, 100).fov).toBe(FOV_MAX)
+    expect(applyWheel(DEFAULT_VIEW, -100).fov).toBeCloseTo(75 * Math.exp(-100 * WHEEL_ZOOM_RATE))
+    expect(applyWheel(DEFAULT_VIEW, 10).fov).toBeGreaterThan(75)
     expect(applyWheel(DEFAULT_VIEW, 1e6).fov).toBe(FOV_MAX)
     expect(applyWheel(DEFAULT_VIEW, -1e6).fov).toBe(FOV_MIN)
   })
@@ -103,5 +109,41 @@ describe('klavye', () => {
   })
   it('bilinmeyen tuş görünümü değiştirmez', () => {
     expect(applyKey(DEFAULT_VIEW, 'a')).toBe(DEFAULT_VIEW)
+  })
+})
+
+describe('ilk bakış ofseti', () => {
+  it('yaw=0 panoramanın ortasına (u=0.5) bakar', () => {
+    expect(YAW_OFFSET).toBe(-90)
+    expect(horizontalTextureU(DEFAULT_VIEW)).toBeCloseTo(0.5)
+  })
+  it('sağa dönünce (yaw artınca) u artar, aynalama yok', () => {
+    expect(horizontalTextureU({ ...DEFAULT_VIEW, yaw: 90 })).toBeCloseTo(0.75)
+    expect(horizontalTextureU({ ...DEFAULT_VIEW, yaw: 180 })).toBeCloseTo(0)
+    expect(horizontalTextureU({ ...DEFAULT_VIEW, yaw: 270 })).toBeCloseTo(0.25)
+    expect(horizontalTextureU({ ...DEFAULT_VIEW, yaw: -90 })).toBeCloseTo(0.25)
+  })
+  it('kamera dönüşü yaw/pitch derecesini ofsetle radyana çevirir', () => {
+    const r = cameraRotation({ yaw: 0, pitch: 30, fov: 75 })
+    expect(r.y).toBeCloseTo(Math.PI / 2)
+    expect(r.x).toBeCloseTo(Math.PI / 6)
+  })
+})
+
+describe('chooseTextureWidth', () => {
+  it('küçük görüntüyü olduğu gibi bırakır', () => {
+    expect(chooseTextureWidth(1024, 16384, true)).toBe(1024)
+    expect(chooseTextureWidth(1024, 16384, false)).toBe(1024)
+  })
+  it('mobilde en fazla 4096', () => {
+    expect(chooseTextureWidth(8192, 16384, true)).toBe(4096)
+  })
+  it('masaüstünde min(GPU, 8192)', () => {
+    expect(chooseTextureWidth(16384, 16384, false)).toBe(8192)
+    expect(chooseTextureWidth(16384, 4096, false)).toBe(4096)
+    expect(chooseTextureWidth(6000, 16384, false)).toBe(6000)
+  })
+  it('mobilde GPU sınırı 4096 altındaysa onu aşmaz', () => {
+    expect(chooseTextureWidth(8192, 2048, true)).toBe(2048)
   })
 })

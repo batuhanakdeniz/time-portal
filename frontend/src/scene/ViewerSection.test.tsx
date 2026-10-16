@@ -21,6 +21,7 @@ describe('ViewerSection', () => {
     render(<ViewerSection src="/p.png" alt="Roma" loader={loader} />)
     const img = await screen.findByRole('img', { name: 'Roma' })
     expect(img).toHaveAttribute('src', '/p.png')
+    expect(screen.getByText('3B görüntüleyici yüklenemedi, düz önizleme gösteriliyor')).toBeInTheDocument()
     expect(screen.getByText('Roma', { selector: 'figcaption' })).toBeInTheDocument()
   })
 
