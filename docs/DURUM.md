@@ -16,6 +16,9 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 - **Üretim akışı asenkron:** İstek bir iş (job) oluşturur, durum sorgulanır, sonuç saklanır. Üretim saniyeler-dakikalar sürebilir.
 - **Önbellek:** Aynı (yaklaşık konum hücresi, tarih dilimi) için sonuç yeniden üretilmez.
 - **API sözleşmesi:** Elle yazılan `docs/API.md` (karar #14). Yıl negatifse MÖ, yıl 0 yoktur.
+- **Zaman çizgisi:** Yatay, kaydırılıp yakınlaştırılan, doğrusal olmayan ölçekli çizgi (karar #15). MÖ/MS gösterimi tek yardımcıdan (`frontend/src/lib/year.ts`).
+- **Konum seçici:** Düz harita, MapLibre GL JS (karar #16). Geliştirmede anahtarsız demo karolar; üretim karo sağlayıcısı açık karar (#20).
+- **Servis seçimi:** Panorama ve derinlik servislerini ajan araştırır, karşılaştırmayı #17'ye yazar, sahibi kısa listeden seçer (karar #17).
 
 ## Orkestrasyon kararları
 
@@ -43,11 +46,10 @@ tarih + konum
 
 Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
-1. Panorama ve derinlik servisi: #17
-2. ~~API sözleşmesi biçimi: #14~~ → `docs/API.md` (karar verildi)
-3. Zaman çizgisi tasarımı: #15
-4. Konum seçici: #16
-5. Henüz issue'su olmayanlar: barındırma ve yapıt depolama, kimlik doğrulama gerekecek mi, tarihsel doğruluk uyarısı metni, kota eşikleri (#11), moderasyon yaklaşımı (#12).
+1. Panorama ve derinlik servisi: #17 (araştırma sürüyor, sonra kısa listeden seçim)
+2. Üretim harita karo sağlayıcısı: #20
+3. Verilenler: API sözleşmesi #14, zaman çizgisi #15, konum seçici #16 (yukarıdaki Kararlar bölümünde)
+4. Henüz issue'su olmayanlar: barındırma ve yapıt depolama, kimlik doğrulama gerekecek mi, tarihsel doğruluk uyarısı metni, kota eşikleri (#11), moderasyon yaklaşımı (#12).
 
 ## Riskler
 
@@ -58,5 +60,9 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 ## Sıradaki adım
 
-1. Sahibi #14'e (API sözleşmesi) cevap verir, #13'teki routine kurulumunu yapar.
-2. Ardından ajan #3'ü (sahte üretici ve iş akışı) `auto/3-...` dalında alır.
+Güncel durum her zaman GitHub'da: `gh issue list --label P0-şimdi`, `gh pr list`.
+
+1. #6 (zaman çizgisi) ve #7 (konum seçici) paralel worktree'lerde geliştiriliyor; #17 araştırması sürüyor.
+2. Bileşenler birleşince ayrı bir entegrasyon görevi `App.tsx`'te zaman çizgisi + konum seçici + `POST /api/scenes` akışını bağlar.
+3. #4 (360° görüntüleyici) sıradaki P1 işi.
+4. Sahibi: #13 kurulumu (GitHub App, routine).

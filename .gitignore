@@ -17,3 +17,6 @@ node_modules/
 /artifacts/
 .DS_Store
 *.tsbuildinfo
+
+# Claude Code ajan worktree'leri
+.claude/worktrees/
