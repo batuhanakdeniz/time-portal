@@ -1,5 +1,6 @@
 package com.timeportal.scene;
 
+import com.timeportal.geo.DistrictLocator;
 import java.net.URI;
 import java.time.Instant;
 import org.springframework.http.ResponseEntity;
@@ -52,14 +53,20 @@ public class SceneController {
 	}
 
 	private final SceneJobService service;
+	private final DistrictLocator districts;
 
-	public SceneController(SceneJobService service) {
+	public SceneController(SceneJobService service, DistrictLocator districts) {
 		this.service = service;
+		this.districts = districts;
 	}
 
 	@PostMapping
 	public ResponseEntity<SceneJobView> create(@RequestBody CreateSceneBody body) {
-		SceneJob job = service.create(body.toRequest());
+		SceneRequest request = body.toRequest();
+		if (districts.locate(request.latitude(), request.longitude()).isEmpty()) {
+			throw new InvalidSceneRequestException("location outside supported area");
+		}
+		SceneJob job = service.create(request);
 		return ResponseEntity.accepted().location(URI.create("/api/scenes/" + job.id())).body(SceneJobView.of(job));
 	}
 

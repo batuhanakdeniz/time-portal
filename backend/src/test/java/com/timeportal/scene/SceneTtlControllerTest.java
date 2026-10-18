@@ -41,7 +41,7 @@ class SceneTtlControllerTest {
 	@Test
 	void finishedJobIsNotFoundAfterTtl() throws Exception {
 		String response = mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
-						.content("{\"year\":-44,\"latitude\":41.9,\"longitude\":12.5}"))
+						.content("{\"year\":-44,\"latitude\":39.92,\"longitude\":32.85}"))
 				.andExpect(status().isAccepted())
 				.andReturn().getResponse().getContentAsString();
 		String id = JsonPath.read(response, "$.id");

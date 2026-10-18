@@ -42,7 +42,7 @@ Yanıt `202 Accepted`, `Location: /api/scenes/{id}`:
 }
 ```
 
-Hatalar: `400` (geçersiz ya da eksik alan); `503` + `Retry-After: 5` (saniye) başlığı ve `{"error": "..."}` gövdesi: aynı anda bekleyen+çalışan iş sayısı sınırına (`timeportal.jobs.max-active`, varsayılan 4) ulaşıldı. İstemci `Retry-After` kadar bekleyip yeniden dener.
+Hatalar: `400` (geçersiz ya da eksik alan; ayrıca konum Türkiye ilçe sınırları dışındaysa, yani deniz ya da yurt dışıysa `{"error": "location outside supported area"}`); `503` + `Retry-After: 5` (saniye) başlığı ve `{"error": "..."}` gövdesi: aynı anda bekleyen+çalışan iş sayısı sınırına (`timeportal.jobs.max-active`, varsayılan 4) ulaşıldı. İstemci `Retry-After` kadar bekleyip yeniden dener.
 
 ## `GET /api/scenes/{id}` — durum ve sonuç
 

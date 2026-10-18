@@ -21,7 +21,7 @@ class SceneCapacityTest {
 
 	@Test
 	void secondRequestGets503WithRetryAfterAndErrorBody() throws Exception {
-		String json = "{\"year\":-44,\"latitude\":41.9,\"longitude\":12.5}";
+		String json = "{\"year\":-44,\"latitude\":39.92,\"longitude\":32.85}";
 		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(json))
 				.andExpect(status().isAccepted());
 		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(json))
