@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Sıralama: önce 360° panoramalar, sonra yatay (genişlik >= yükseklik) fotoğraflar, sonra dikey
  * olanlar; her grupta geosearch sırası (merkeze yakınlık). Panorama: 2:1 (±%3) en-boy oranı ve
- * kategorilerde 360 / equirectangular / spherical panorama / photosphere işareti.
+ * başlık/kategorilerde 360° / equirectangular / spherical panorama / photosphere işareti.
  */
 public class WikimediaCommonsImageSource implements GeoImageSource {
 
@@ -33,15 +33,17 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 	static final String USER_AGENT = "time-portal/0.1 (https://github.com/batuhanakdeniz/time-portal)";
 	static final int MIN_WIDTH = 1024;
 	static final int LIMIT = 50;
+	static final int MAX_AUTHOR_CHARS = 200;
+	private static final String HTTPS = "https://";
 
 	private static final JsonMapper JSON = JsonMapper.builder().build();
 
 	private static final Pattern EXCLUDED_TOPIC = Pattern.compile(
 			"\\b(maps?|logos?|flags?|coats? of arms|diagrams?|locator|seals?|emblems?|charts?|plans?|schemat\\w*|"
-					+ "harita\\w*|bayrak\\w*|arma|logo\\w*)\\b",
+					+ "harita\\w*|bayrak\\w*|arma|logo\\w*|kroki\\w*|posters?|screenshots?)\\b",
 			Pattern.CASE_INSENSITIVE);
 	private static final Pattern PANORAMA_MARK = Pattern.compile(
-			"\\b360\\b|360°|pano360|equirectangular|spherical panorama|photo ?sphere", Pattern.CASE_INSENSITIVE);
+			"360\\s?°|360[- ]?degrees?|pano360|equirectangular|spherical panorama|photo ?sphere", Pattern.CASE_INSENSITIVE);
 	private static final Pattern THUMB_WIDTH = Pattern.compile("/thumb/.*/(\\d+)px-[^/]*$");
 	private static final Pattern LICENSE_CC0 = Pattern.compile("^CC0([ -]1\\.0)?( Universal)?$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern LICENSE_PD = Pattern.compile(
@@ -111,7 +113,7 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 		}
 		String thumb = text(info.path("thumburl"));
 		String url = thumb.isEmpty() ? text(info.path("url")) : thumb;
-		if (url.isEmpty()) {
+		if (!url.startsWith(HTTPS)) {
 			return null;
 		}
 		// Commons thumburl'u istenen genişlikten büyük standart adıma yuvarlayabilir ("3840px-"); gerçek
@@ -127,6 +129,9 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 				&& (PANORAMA_MARK.matcher(categories).find() || PANORAMA_MARK.matcher(title).find());
 		int rank = pano ? 0 : (width >= height ? 1 : 2);
 		String source = text(info.path("descriptionurl"));
+		if (!source.startsWith(HTTPS)) {
+			return null;
+		}
 		String author = cleanHtml(text(meta.path("Artist").path("value")));
 		if (author.isEmpty()) {
 			author = cleanHtml(text(meta.path("Credit").path("value")));
@@ -135,8 +140,8 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 			author = "Wikimedia Commons";
 		}
 		String licenseUrl = text(meta.path("LicenseUrl").path("value"));
-		if (licenseUrl.isEmpty() && LICENSE_CC0.matcher(license).matches()) {
-			licenseUrl = "https://creativecommons.org/publicdomain/zero/1.0/";
+		if (!licenseUrl.startsWith(HTTPS)) {
+			licenseUrl = defaultLicenseUrl(license);
 		}
 		return new Candidate(rank, page.path("index").asInt(Integer.MAX_VALUE),
 				new CityImage(url, pano ? ImageKind.PANORAMA_360 : ImageKind.PHOTO, outW, outH,
@@ -148,17 +153,71 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 				|| LICENSE_CC_BY.matcher(license).matches();
 	}
 
+	private static final Pattern CC_BY_VERSION = Pattern.compile("^CC[ -]BY(-SA)?[ -](\\d\\.\\d)", Pattern.CASE_INSENSITIVE);
+	/** Temizlemeden önce girdi bu uzunluğa kırpılır (Commons metni kullanıcı düzenlemeli, 2 MB'a varabilir). */
+	static final int MAX_HTML_INPUT_CHARS = 10_000;
+
+	/** Bilinen lisans adları için standart creativecommons.org adresi; bilinmiyorsa boş. */
+	static String defaultLicenseUrl(String license) {
+		if (LICENSE_CC0.matcher(license).matches()) {
+			return "https://creativecommons.org/publicdomain/zero/1.0/";
+		}
+		Matcher m = CC_BY_VERSION.matcher(license);
+		if (m.find()) {
+			return "https://creativecommons.org/licenses/by" + (m.group(1) != null ? "-sa" : "") + "/" + m.group(2) + "/";
+		}
+		return "";
+	}
+
+	/** Tek geçişli etiket silme: {@code <} ile sonraki {@code >} arası (kapanmayan parça dahil) atılır. O(n). */
+	private static String stripTags(String s) {
+		StringBuilder out = new StringBuilder(s.length());
+		int i = 0;
+		while (i < s.length()) {
+			char c = s.charAt(i);
+			if (c == '<') {
+				int end = s.indexOf('>', i);
+				out.append(' ');
+				if (end < 0) {
+					break;
+				}
+				i = end + 1;
+			}
+			else {
+				out.append(c);
+				i++;
+			}
+		}
+		return out.toString();
+	}
+	private static final Pattern NUMERIC_ENTITY = Pattern.compile("&#(x[0-9a-fA-F]{1,6}|\\d{1,7});");
+
+	/**
+	 * Commons HTML'inden düz metin çıkarır. Sıra: etiketleri sil (kapanmayan parça dahil) → entity çöz →
+	 * kalan {@code <} ve {@code >} karakterlerini at → boşlukları sadeleştir → uzunluğu sınırla.
+	 */
 	static String cleanHtml(String html) {
-		return html.replaceAll("<[^>]*>", " ")
-			.replace("&nbsp;", " ")
+		String input = html.length() > MAX_HTML_INPUT_CHARS ? html.substring(0, MAX_HTML_INPUT_CHARS) : html;
+		String s = stripTags(input);
+		s = NUMERIC_ENTITY.matcher(s).replaceAll(m -> Matcher.quoteReplacement(decodeNumeric(m.group(1))));
+		s = s.replace("&nbsp;", " ")
 			.replace("&quot;", "\"")
-			.replace("&#039;", "'")
-			.replace("&#39;", "'")
+			.replace("&apos;", "'")
 			.replace("&lt;", "<")
 			.replace("&gt;", ">")
-			.replace("&amp;", "&")
-			.replaceAll("\\s+", " ")
-			.strip();
+			.replace("&amp;", "&");
+		s = s.replace("<", "").replace(">", "").replaceAll("\\s+", " ").strip();
+		return MapillaryImageSource.cap(s, MAX_AUTHOR_CHARS);
+	}
+
+	private static String decodeNumeric(String num) {
+		try {
+			int cp = num.startsWith("x") ? Integer.parseInt(num.substring(1), 16) : Integer.parseInt(num);
+			return Character.isValidCodePoint(cp) && !Character.isISOControl(cp) ? new String(Character.toChars(cp)) : " ";
+		}
+		catch (NumberFormatException e) {
+			return " ";
+		}
 	}
 
 	private static String text(JsonNode n) {

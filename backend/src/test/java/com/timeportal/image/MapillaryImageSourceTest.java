@@ -3,6 +3,11 @@ package com.timeportal.image;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -158,5 +163,117 @@ class MapillaryImageSourceTest {
 
 		// 1 km'lik alanda onlarca hücre var; en yakın pano ~100 m'de bulununca uzak hücreler sorulmaz.
 		assertThat(http.requests.size()).isLessThan(10);
+	}
+
+	@Test
+	void cellErrorAfterABestWasFoundReturnsTheBest() {
+		String near = FakeHttp.fixture("mapillary-near.json");
+		AtomicInteger n = new AtomicInteger();
+		FakeHttp http = new FakeHttp(url -> {
+			if (n.incrementAndGet() == 1) {
+				return near;
+			}
+			throw new FakeHttp.StatusSignal(503, "unavailable");
+		});
+
+		Optional<CityImage> r = new MapillaryImageSource(http, TOKEN).find(LAT, LON, 300);
+
+		assertThat(r).map(CityImage::url).contains("https://scontent.example/nearest-100m.jpg");
+		assertThat(http.requests.size()).isGreaterThan(1);
+	}
+
+	@Test
+	void cellErrorWithoutAnyResultIsStillASourceError() {
+		FakeHttp http = FakeHttp.failing("HTTP 503");
+
+		assertThatThrownBy(() -> new MapillaryImageSource(http, TOKEN).find(LAT, LON, 300))
+			.isInstanceOf(ImageSourceException.class);
+	}
+
+	@Test
+	void unexpectedRuntimeExceptionsAreRedactedToo() {
+		String weird = "MLY|1|ab\u0001cd";
+		FakeHttp http = new FakeHttp(url -> {
+			throw new IllegalArgumentException("invalid header value: OAuth " + weird);
+		});
+
+		assertThatThrownBy(() -> new MapillaryImageSource(http, weird).find(LAT, LON, 300))
+			.isInstanceOf(ImageSourceException.class)
+			.satisfies(e -> {
+				assertThat(e.getMessage()).doesNotContain(weird).doesNotContain("ab\u0001cd");
+				assertThat(e.getCause()).isNull();
+			});
+	}
+
+	@Test
+	void tokenFormatValidation() {
+		assertThat(MapillaryImageSource.isValidToken("MLY|123|abcDEF")).isTrue();
+		assertThat(MapillaryImageSource.isValidToken("")).isFalse();
+		assertThat(MapillaryImageSource.isValidToken("MLY|1|a b")).isFalse();
+		assertThat(MapillaryImageSource.isValidToken("MLY|1|a\u0001b")).isFalse();
+		assertThat(MapillaryImageSource.isValidToken("MLY|1|a\nb")).isFalse();
+		assertThat(MapillaryImageSource.isValidToken("MLY|1|çok")).isFalse();
+	}
+
+	private static String item(String id, String url, long capturedAt, double lat, String user) {
+		return String.format(java.util.Locale.ROOT,
+				"{\"id\":\"%s\",\"thumb_2048_url\":\"%s\",\"width\":8192,\"height\":4096,\"is_pano\":true,"
+						+ "\"creator\":{\"username\":\"%s\"},\"captured_at\":%d,"
+						+ "\"computed_geometry\":{\"type\":\"Point\",\"coordinates\":[29.0,%.6f]}}",
+				id, url, user, capturedAt, lat);
+	}
+
+	private static final Clock NOW = Clock.fixed(Instant.parse("2026-10-19T00:00:00Z"), ZoneOffset.UTC);
+	private static final long OLD = Instant.parse("2005-01-01T00:00:00Z").toEpochMilli();
+	private static final long RECENT = Instant.parse("2024-01-01T00:00:00Z").toEpochMilli();
+
+	@Test
+	void veryOldImagesAreSortedBehindRecentOnesEvenIfCloser() {
+		String body = "{\"data\":[" + item("1", "https://s.example/old-50m.jpg", OLD, 41.00045, "eski") + ","
+				+ item("2", "https://s.example/recent-200m.jpg", RECENT, 41.0018, "yeni") + "]}";
+
+		CityImage image = new MapillaryImageSource(new FakeHttp(u -> body), TOKEN, NOW).find(LAT, LON, 300).orElseThrow();
+
+		assertThat(image.url()).isEqualTo("https://s.example/recent-200m.jpg");
+	}
+
+	@Test
+	void anOldImageIsStillUsedWhenNothingNewerExists() {
+		String body = "{\"data\":[" + item("1", "https://s.example/old-50m.jpg", OLD, 41.00045, "eski") + "]}";
+
+		assertThat(new MapillaryImageSource(new FakeHttp(u -> body), TOKEN, NOW).find(LAT, LON, 300))
+			.map(CityImage::url)
+			.contains("https://s.example/old-50m.jpg");
+	}
+
+	@Test
+	void nonHttpsThumbnailsAreIgnoredAndLongUsernamesAreCapped() {
+		String body = "{\"data\":[" + item("1", "http://s.example/plain-10m.jpg", RECENT, 41.0001, "x") + ","
+				+ item("2", "https://s.example/ok-100m.jpg", RECENT, 41.0009, "u".repeat(500)) + "]}";
+
+		CityImage image = new MapillaryImageSource(new FakeHttp(u -> body), TOKEN, NOW).find(LAT, LON, 300).orElseThrow();
+
+		assertThat(image.url()).isEqualTo("https://s.example/ok-100m.jpg");
+		assertThat(image.attribution().author()).hasSizeLessThan(120).startsWith("© Mapillary katkıcıları, uuu");
+	}
+
+	@Test
+	void anExpiredDeadlineStopsScanningImmediately() {
+		FakeHttp http = FakeHttp.always("mapillary-empty.json");
+		Deadline expired = Deadline.after(NOW, java.time.Duration.ofSeconds(-1));
+
+		assertThat(new MapillaryImageSource(http, TOKEN, NOW).find(LAT, LON, 1000, expired)).isEmpty();
+		assertThat(http.requests).isEmpty();
+	}
+
+	@Test
+	void requestCountPerSearchIsCapped() {
+		FakeHttp http = new FakeHttp(u -> {
+			throw new FakeHttp.StatusSignal(500, "{\"error\":{\"code\":1}}");
+		});
+		// Her hücre bölünmeye çalışır ama hata derinlikte biter; sınırdan fazla istek atılmaz.
+		assertThatThrownBy(() -> new MapillaryImageSource(http, TOKEN).find(LAT, LON, 1000))
+			.isInstanceOf(ImageSourceException.class);
+		assertThat(http.requests.size()).isLessThanOrEqualTo(MapillaryImageSource.MAX_REQUESTS);
 	}
 }

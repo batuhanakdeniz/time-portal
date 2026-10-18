@@ -11,4 +11,12 @@ public interface CityImageFinder {
 
 	/** Görsel yoksa boş döner; kaynak hataları fırlatılmaz (zincir sonraki adıma geçer). */
 	Optional<CityImage> find(District district);
+
+	/**
+	 * {@link #find} ile aynı; ek olarak sonucun "geçici hata" içerip içermediğini bildirir (önbellek
+	 * kısa TTL seçsin diye). Varsayılan: hata bilgisi yok.
+	 */
+	default FindOutcome findDetailed(District district) {
+		return new FindOutcome(find(district), false);
+	}
 }
