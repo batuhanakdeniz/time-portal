@@ -52,9 +52,19 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 			"^CC[ -]BY(-SA)?[ -]\\d\\.\\d( [A-Za-z-]+)?$", Pattern.CASE_INSENSITIVE);
 
 	private final ImageHttp http;
+	private final boolean subjectFilter;
 
 	public WikimediaCommonsImageSource(ImageHttp http) {
+		this(http, false);
+	}
+
+	/**
+	 * {@code subjectFilter} açıksa kentsel/manzara ipucu taşımayan ve hayvan/bitki/portre gibi ipucu
+	 * taşıyan adaylar elenir ({@link SubjectFilter}); zincirin il merkezi adımı için.
+	 */
+	public WikimediaCommonsImageSource(ImageHttp http, boolean subjectFilter) {
 		this.http = http;
+		this.subjectFilter = subjectFilter;
 	}
 
 	@Override
@@ -75,6 +85,10 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 		List<Candidate> candidates = new ArrayList<>();
 		for (JsonNode page : pages) {
 			Candidate c = toCandidate(page);
+			if (c != null && subjectFilter && !SubjectFilter.isRelevant(text(page.path("title")),
+					text(page.path("imageinfo").path(0).path("extmetadata").path("Categories").path("value")))) {
+				continue;
+			}
 			if (c != null) {
 				candidates.add(c);
 			}
@@ -145,7 +159,8 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 		}
 		return new Candidate(rank, page.path("index").asInt(Integer.MAX_VALUE),
 				new CityImage(url, pano ? ImageKind.PANORAMA_360 : ImageKind.PHOTO, outW, outH,
-						new Attribution(author, license, licenseUrl.isEmpty() ? null : licenseUrl, source)));
+						new Attribution(author, license, licenseUrl.isEmpty() ? null : licenseUrl, source,
+								Attribution.WIKIMEDIA_COMMONS)));
 	}
 
 	static boolean isAllowedLicense(String license) {

@@ -55,6 +55,14 @@ class SceneControllerTest {
 		mockMvc.perform(get("/api/scenes/" + id))
 				.andExpect(jsonPath("$.result.panoramaUrl").value("/api/samples/sample-pano.png"))
 				.andExpect(jsonPath("$.result.depthUrl").value("/api/samples/sample-depth.png"))
+				.andExpect(jsonPath("$.result.kind").value("panorama"))
+				.andExpect(jsonPath("$.result.place.province").value("Ankara"))
+				.andExpect(jsonPath("$.result.place.district").value("Çankaya"))
+				.andExpect(jsonPath("$.result.attribution.provider").value("sample"))
+				.andExpect(jsonPath("$.result.attribution.author").isNotEmpty())
+				.andExpect(jsonPath("$.result.attribution.license").isNotEmpty())
+				.andExpect(jsonPath("$.result.attribution.licenseUrl").isNotEmpty())
+				.andExpect(jsonPath("$.result.attribution.sourceUrl").isNotEmpty())
 				.andExpect(jsonPath("$.error").doesNotExist());
 	}
 
