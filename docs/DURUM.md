@@ -88,7 +88,8 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 Güncel durum her zaman GitHub'da: `gh issue list --label F1-türkiye-2026`, `gh pr list`.
 
-1. Bitti: #38 (harita), #39 (ilçe bulma), #45 (2.5B görüntüleyici).
-2. Sonra: #40 (görsel bulma) → #41 (3B üretici) → #42 (API + arayüz).
-3. Sahibi: #44 Mapillary anahtarı.
-4. Sonra Faz 2: #5, #27, #33.
+1. Bitti: #38 (harita), #39 (ilçe bulma), #40 + #49 (ilçe görseli), #41 (gerçek üretici: ONNX derinlik, yapıt deposu), #45 (2.5B görüntüleyici).
+2. Sıradaki: #42 (arayüz: `kind`'a göre görüntüleyici, "İlçe, İl", atıf, Türkçe hatalar). Faz 1 bununla tamamlanır.
+3. Sonra Faz 2: #5 (derinlikli hareket; derinlik ölçeği notu issue'da), #27, #33.
+
+Yerelde gerçek üretici: `timeportal.generator=city-image` (varsayılan), Mapillary için `MAPILLARY_TOKEN` ortam değişkeni. Model ilk istekte indirilir (`backend/MODELS.md`). Testler ve CI `fake` kullanır.
