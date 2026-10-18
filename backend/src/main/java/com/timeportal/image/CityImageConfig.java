@@ -16,7 +16,7 @@ public class CityImageConfig {
 
 	@Bean
 	CityImageFinder cityImageFinder(ProvinceCenters provinceCenters, @Value("${MAPILLARY_TOKEN:}") String token,
-			@Value("${timeportal.image.mapillary-ttl:PT30M}") Duration mapillaryTtl,
+			@Value("${timeportal.image.mapillary-ttl:PT24H}") Duration mapillaryTtl,
 			@Value("${timeportal.image.commons-ttl:PT12H}") Duration commonsTtl,
 			@Value("${timeportal.image.empty-ttl:PT5M}") Duration emptyTtl,
 			@Value("${timeportal.image.max-entries:1000}") int maxEntries) {

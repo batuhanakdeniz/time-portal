@@ -100,4 +100,63 @@ class MapillaryImageSourceTest {
 
 		assertThatThrownBy(() -> source.find(LAT, LON, 300)).isInstanceOf(ImageSourceException.class);
 	}
+
+	private static final String REDUCE_DATA = "{\"error\":{\"message\":\"Please reduce the amount of data you're asking for, then retry your request\",\"type\":\"OAuthException\",\"code\":1}}";
+
+	private static double span(String url) {
+		Matcher m = Pattern.compile("bbox=(-?[\\d.]+),(-?[\\d.]+),(-?[\\d.]+),(-?[\\d.]+)").matcher(url);
+		assertThat(m.find()).isTrue();
+		return Double.parseDouble(m.group(3)) - Double.parseDouble(m.group(1));
+	}
+
+	@Test
+	void reduceDataErrorShrinksTheBboxAndRetries() {
+		String ok = FakeHttp.fixture("mapillary-near.json");
+		FakeHttp http = new FakeHttp(url -> {
+			if (span(url) > 0.002) {
+				throw new FakeHttp.StatusSignal(500, REDUCE_DATA);
+			}
+			return ok;
+		});
+
+		CityImage image = new MapillaryImageSource(http, TOKEN).find(LAT, LON, 300).orElseThrow();
+
+		assertThat(image.url()).isEqualTo("https://scontent.example/nearest-100m.jpg");
+		assertThat(http.requests.stream().filter(r -> span(r.url()) > 0.002)).isNotEmpty();
+		assertThat(http.requests.stream().filter(r -> span(r.url()) <= 0.002)).isNotEmpty();
+	}
+
+	@Test
+	void persistentReduceDataErrorEventuallyGivesUpAsASourceError() {
+		FakeHttp http = new FakeHttp(url -> {
+			throw new FakeHttp.StatusSignal(500, REDUCE_DATA);
+		});
+
+		assertThatThrownBy(() -> new MapillaryImageSource(http, TOKEN).find(LAT, LON, 300))
+			.isInstanceOf(ImageSourceException.class);
+		assertThat(http.requests.size()).isLessThan(200);
+	}
+
+	@Test
+	void otherServerErrorsAreNotRetriedAsShrink() {
+		FakeHttp http = new FakeHttp(url -> {
+			throw new FakeHttp.StatusSignal(500,
+					"{\"error\":{\"message\":\"Service temporarily unavailable\",\"code\":2}}");
+		});
+
+		assertThatThrownBy(() -> new MapillaryImageSource(http, TOKEN).find(LAT, LON, 300))
+			.isInstanceOf(ImageSourceException.class)
+			.hasMessageContaining("HTTP 500");
+		assertThat(http.requests).hasSize(1);
+	}
+
+	@Test
+	void farCellsAreSkippedOnceANearerPanoramaIsKnown() {
+		FakeHttp http = FakeHttp.always("mapillary-near.json");
+
+		new MapillaryImageSource(http, TOKEN).find(LAT, LON, 1000);
+
+		// 1 km'lik alanda onlarca hücre var; en yakın pano ~100 m'de bulununca uzak hücreler sorulmaz.
+		assertThat(http.requests.size()).isLessThan(10);
+	}
 }

@@ -20,6 +20,13 @@ final class GeoMath {
 		return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(a)));
 	}
 
+	/** Merkezden {@code {minLon, minLat, maxLon, maxLat}} kutusuna en kısa mesafe (kutu içindeyse 0). */
+	static double distanceToBoxMeters(double lat, double lon, double[] box) {
+		double nearestLon = Math.max(box[0], Math.min(lon, box[2]));
+		double nearestLat = Math.max(box[1], Math.min(lat, box[3]));
+		return haversineMeters(lat, lon, nearestLat, nearestLon);
+	}
+
 	/**
 	 * Merkez çevresindeki kareyi, kenarı {@code maxSpanDeg} dereceyi aşmayan hücrelere böler.
 	 * Her hücre {@code {minLon, minLat, maxLon, maxLat}}.

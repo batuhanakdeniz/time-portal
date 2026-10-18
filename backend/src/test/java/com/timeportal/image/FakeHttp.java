@@ -54,6 +54,20 @@ class FakeHttp implements ImageHttp {
 		catch (FailureSignal f) {
 			throw new IOException(f.getMessage());
 		}
+		catch (StatusSignal st) {
+			throw new HttpStatusException(st.status, st.body);
+		}
+	}
+
+	/** Responder içinden HTTP durum hatası fırlatmak için. */
+	static class StatusSignal extends RuntimeException {
+		final int status;
+		final String body;
+
+		StatusSignal(int status, String body) {
+			this.status = status;
+			this.body = body;
+		}
 	}
 
 	private static class FailureSignal extends RuntimeException {

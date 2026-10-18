@@ -25,7 +25,7 @@ public class JdkImageHttp implements ImageHttp {
 		try {
 			HttpResponse<String> response = client.send(request.build(), HttpResponse.BodyHandlers.ofString());
 			if (response.statusCode() / 100 != 2) {
-				throw new IOException("HTTP " + response.statusCode());
+				throw new HttpStatusException(response.statusCode(), response.body());
 			}
 			return response.body();
 		}
