@@ -30,7 +30,7 @@ class SceneControllerTest {
 	void createsJobAndItBecomesReady() throws Exception {
 		String response = mockMvc.perform(post("/api/scenes")
 						.contentType(MediaType.APPLICATION_JSON)
-						.content(body(-44, 41.9, 12.5)))
+						.content(body(-44, 39.92, 32.85)))
 				.andExpect(status().isAccepted())
 				.andExpect(header().exists("Location"))
 				.andExpect(jsonPath("$.id").isNotEmpty())
@@ -65,15 +65,17 @@ class SceneControllerTest {
 	}
 
 	@Test
-	void rejectsInvalidLatitude() throws Exception {
+	void rejectsInvalidLatitudeBeforeLocationCheck() throws Exception {
 		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(body(2000, 91, 0)))
-				.andExpect(status().isBadRequest());
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").value("latitude must be between -90 and 90"));
 	}
 
 	@Test
 	void rejectsYearZero() throws Exception {
-		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(body(0, 10, 10)))
-				.andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(body(0, 39.92, 32.85)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("year must be")));
 	}
 
 	@Test
@@ -106,7 +108,7 @@ class SceneControllerTest {
 	@Test
 	void wrongTypeReturnsErrorBody() throws Exception {
 		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
-						.content("{\"year\":\"abc\",\"latitude\":1,\"longitude\":1}"))
+						.content("{\"year\":\"abc\",\"latitude\":39.92,\"longitude\":32.85}"))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error").isNotEmpty());
 	}
@@ -114,7 +116,24 @@ class SceneControllerTest {
 	@Test
 	void fractionalYearIsRejected() throws Exception {
 		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
-						.content("{\"year\":1.5,\"latitude\":1,\"longitude\":1}"))
-				.andExpect(status().isBadRequest());
+						.content("{\"year\":1.5,\"latitude\":39.92,\"longitude\":32.85}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").value("year must be an integer"));
+	}
+
+	@Test
+	void locationOutsideTurkeyIsRejected() throws Exception {
+		// Atina
+		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(body(2000, 37.98, 23.73)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").value("location outside supported area"));
+	}
+
+	@Test
+	void locationInTheSeaIsRejected() throws Exception {
+		// Ege Denizi
+		mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON).content(body(2000, 38.5, 25.0)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error").value("location outside supported area"));
 	}
 }
