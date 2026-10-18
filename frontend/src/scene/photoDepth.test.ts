@@ -14,6 +14,8 @@ import {
   GRID_DESKTOP_COLS,
   GRID_MOBILE_COLS,
   orbitPosition,
+  overscanScale,
+  smoothToward,
   PARALLAX_PITCH,
   PARALLAX_YAW,
   PHOTO_HANDLED_KEYS,
@@ -141,6 +143,76 @@ describe('kenar sönümleme', () => {
       expect(a).toBeGreaterThanOrEqual(0)
       expect(a).toBeLessThanOrEqual(1)
     }
+  })
+})
+
+describe('taşma payı (overscan)', () => {
+  const FOV = 45
+  type V3 = [number, number, number]
+  const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+  const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+  const norm = (a: V3): V3 => {
+    const l = Math.hypot(...a)
+    return [a[0] / l, a[1] / l, a[2] / l]
+  }
+
+  /** Düzlem kenar noktalarının kadraja göre en küçük açısal oranları (>= tan(yarı fov) ise kadraj dışında). */
+  function edgeRatios(yaw: number, pitch: number, aspect: number, scale: number) {
+    const pos = orbitPosition(yaw, pitch, cameraDistance(FOV, 1))
+    const f = norm([-pos[0], -pos[1], -pos[2]])
+    const right = norm(cross(f, [0, 1, 0]))
+    const up = cross(right, f)
+    const lat = (p: V3) => {
+      const v = sub(p, pos)
+      return Math.abs(dot(v, right)) / dot(v, f)
+    }
+    const vert = (p: V3) => {
+      const v = sub(p, pos)
+      return Math.abs(dot(v, up)) / dot(v, f)
+    }
+    const w = scale * aspect
+    const h = scale
+    return {
+      horiz: Math.min(lat([w, 0, 0]), lat([-w, 0, 0])),
+      vert: Math.min(vert([0, h, 0]), vert([0, -h, 0])),
+    }
+  }
+
+  it('zoom=1 ve en uç yaw/pitch kombinasyonlarında kenar kadraj dışında kalır', () => {
+    const tv = Math.tan((FOV * Math.PI) / 360)
+    for (const aspect of [1.0, 1.5, 2.4]) {
+      const s = overscanScale(FOV, aspect)
+      for (const yaw of [-YAW_LIMIT, 0, YAW_LIMIT]) {
+        for (const pitch of [-PITCH_LIMIT, 0, PITCH_LIMIT]) {
+          const r = edgeRatios(yaw, pitch, aspect, s)
+          expect(r.horiz).toBeGreaterThanOrEqual(tv * aspect)
+          expect(r.vert).toBeGreaterThanOrEqual(tv)
+        }
+      }
+    }
+  })
+
+  it('ölçek 1 olsaydı en uç açıda kenar kadraja girerdi (ölçek gerekli)', () => {
+    const r = edgeRatios(YAW_LIMIT, 0, 1.5, 1)
+    expect(r.horiz).toBeLessThan(Math.tan((FOV * Math.PI) / 360) * 1.5)
+    expect(overscanScale(FOV, 1.5)).toBeGreaterThan(1)
+  })
+
+  it('ölçek makul kalır ve geçersiz orana dayanıklıdır', () => {
+    expect(overscanScale(FOV, 1.5)).toBeLessThan(1.5)
+    expect(overscanScale(FOV, NaN)).toBeGreaterThan(1)
+  })
+})
+
+describe('paralaks yumuşatma', () => {
+  it('hedefe yaklaşır, aşmaz, büyük adımda hedefe oturur', () => {
+    const a = smoothToward(0, 1, 0.016)
+    expect(a).toBeGreaterThan(0)
+    expect(a).toBeLessThan(1)
+    expect(smoothToward(0, 1, 10)).toBe(1)
+    expect(smoothToward(1, 1, 0.016)).toBe(1)
+    expect(smoothToward(0.5, -1, -5)).toBe(0.5)
   })
 })
 

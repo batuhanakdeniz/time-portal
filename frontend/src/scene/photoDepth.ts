@@ -120,7 +120,36 @@ export function cameraDistance(fovDeg: number, zoom: number, planeHeight = 2): n
   return planeHeight / 2 / Math.tan(half) / clampZoom(zoom)
 }
 
-const smoothstep = (t: number) => {
+/** Sınır açılarında kenarın kadraja girmemesi için ek güvenlik payı (köşelerde yaw+pitch etkileşimi). */
+export const OVERSCAN_MARGIN = 1.02
+
+/**
+ * Düzlem ölçeği (>= 1): en uç yaw/pitch'te bile düzlemin kenarı kadraj dışında kalır (bilinçli hafif kırpma).
+ * Kamera yörüngede dönünce düzlemin uzak kenarı merkeze yaklaşık olarak w·cosθ / (D + w·sinθ) açısında görünür;
+ * bunun kadraj yarı açısının tanjantından küçük olmaması için gereken yarı boyut çözülür.
+ * aspect: kadrajın (ve düzlemin) en/boy oranı. Düzlem yüksekliği 2, kamera uzaklığı zoom=1'de sığdırma uzaklığıdır.
+ */
+export function overscanScale(fovDeg: number, aspect: number): number {
+  const tv = Math.tan((fovDeg * Math.PI) / 360)
+  const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 1.5
+  const th = tv * a
+  const rad = Math.PI / 180
+  const sy = Math.cos(YAW_LIMIT * rad)
+  const sp = Math.cos(PITCH_LIMIT * rad)
+  const fy = sy - th * Math.sin(YAW_LIMIT * rad)
+  const fp = sp - tv * Math.sin(PITCH_LIMIT * rad)
+  if (fy <= 0 || fp <= 0) return 2
+  return Math.max(1, (1 / fy) * OVERSCAN_MARGIN, (1 / fp) * OVERSCAN_MARGIN)
+}
+
+/** Paralaks yumuşatma: hedefe doğru kare süresinden bağımsız üssel yaklaşım. */
+export function smoothToward(current: number, target: number, deltaSec: number, rate = 8): number {
+  const k = 1 - Math.exp(-Math.max(0, finite(deltaSec)) * rate)
+  const next = current + (target - current) * k
+  return Math.abs(target - next) < 1e-4 ? target : next
+}
+
+const smoothstep =(t: number) => {
   const c = clamp(t, 0, 1)
   return c * c * (3 - 2 * c)
 }

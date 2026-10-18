@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   lookAt: vi.fn(),
   invalidate: vi.fn(),
   canvasThrows: false,
+  frameCb: null as null | ((state: { invalidate: () => void }, delta: number) => void),
   setZ: vi.fn(),
 }))
 
@@ -28,6 +29,9 @@ vi.mock('@react-three/fiber', () => ({
   Canvas: ({ children }: { children: React.ReactNode }) => {
     if (h.canvasThrows) throw new Error('WebGL context oluşturulamadı')
     return <div data-testid="canvas">{children}</div>
+  },
+  useFrame: (cb: (state: { invalidate: () => void }, delta: number) => void) => {
+    h.frameCb = cb
   },
   useThree: (select: (s: unknown) => unknown) =>
     select({
@@ -76,11 +80,30 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const app = () => screen.getByRole('application', { name: '2.5 boyutlu fotoğraf görünümü' })
+const app = () => screen.getByRole('application', { name: '2.5 boyutlu fotoğraf görünümü: Roma, 2026' })
+const frame = (delta: number) => act(() => h.frameCb?.({ invalidate: h.invalidate }, delta))
 const renderViewer = (depthUrl: string | undefined = '/d.png') =>
   render(<PhotoDepthViewer photoUrl="/p.png" depthUrl={depthUrl} alt="Roma, 2026" />)
 
 describe('PhotoDepthViewer', () => {
+  it('fareyle ardışık sürüklemede çökmez, 3B modda kalır', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    setWebGL(true)
+    renderViewer()
+    act(() => h.loaders['/p.png'].resolve())
+    act(() => h.loaders['/d.png'].resolve())
+    const el = app()
+    el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300, right: 400, bottom: 300, x: 0, y: 0, toJSON: () => {} })
+    Object.defineProperty(el, 'clientHeight', { value: 300, configurable: true })
+    el.setPointerCapture = () => {}
+    fireEvent.pointerDown(el, { pointerId: 1, pointerType: 'mouse', clientX: 200, clientY: 150, button: 0 })
+    fireEvent.pointerMove(el, { pointerId: 1, pointerType: 'mouse', clientX: 180, clientY: 140 })
+    fireEvent.pointerMove(el, { pointerId: 1, pointerType: 'mouse', clientX: 160, clientY: 130 })
+    expect(app()).toHaveAttribute('data-mode', 'depth')
+    expect(Number(app().dataset.yaw)).toBeGreaterThan(0)
+    expect(screen.queryByText(/desteklenmiyor|açılamadı/)).not.toBeInTheDocument()
+  })
+
   it('WebGL yoksa düz fotoğrafa düşer ve bilgi verir', () => {
     setWebGL(false)
     renderViewer()
@@ -89,12 +112,14 @@ describe('PhotoDepthViewer', () => {
     expect(screen.queryByRole('application')).not.toBeInTheDocument()
   })
 
-  it('Canvas hata fırlatırsa düz fotoğrafa düşer', () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
+  it('Canvas hata fırlatırsa düz fotoğrafa düşer, farklı mesaj verir ve hatayı loglar', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     setWebGL(true)
     h.canvasThrows = true
     renderViewer()
-    expect(screen.getByText('3B görüntüleme desteklenmiyor, düz fotoğraf gösteriliyor')).toBeInTheDocument()
+    expect(screen.getByText('3B görünüm açılamadı, düz fotoğraf gösteriliyor')).toBeInTheDocument()
+    expect(screen.queryByText(/desteklenmiyor/)).not.toBeInTheDocument()
+    expect(err.mock.calls.some((c) => String(c[0]).includes('3B görünüm açılamadı'))).toBe(true)
     expect(screen.getByRole('img', { name: 'Roma, 2026' })).toBeInTheDocument()
   })
 
@@ -102,6 +127,8 @@ describe('PhotoDepthViewer', () => {
     setWebGL(true)
     renderViewer()
     expect(app()).toHaveAttribute('tabindex', '0')
+    expect(app()).toHaveAccessibleDescription(/Ctrl \+ tekerlek/)
+    expect(screen.getByRole('status')).toHaveTextContent('Fotoğraf yükleniyor…')
     expect(screen.getByText(/Ctrl \+ tekerlek/)).toBeInTheDocument()
     expect(screen.getByText('Roma, 2026', { selector: 'figcaption' })).toBeInTheDocument()
   })
@@ -158,6 +185,7 @@ describe('PhotoDepthViewer', () => {
   it('fotoğraf ve derinlik yüklenince kamera yörüngeye yerleştirilir', () => {
     setWebGL(true)
     renderViewer()
+    frame(0.016)
     expect(h.positionSet).toHaveBeenCalled()
     expect(h.lookAt).toHaveBeenCalledWith(0, 0, 0)
   })
@@ -200,16 +228,54 @@ describe('PhotoDepthViewer', () => {
     expect(Number(el.dataset.zoom)).toBeGreaterThan(1)
   })
 
-  it('fare hareketi kamera konumunu günceller (paralaks)', () => {
+  const rect100 = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => {} })
+
+  it('fare hareketi paralaksı yumuşatılarak uygular; ani sıçrama yok', () => {
     setWebGL(true)
     renderViewer()
     const el = app()
-    el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => {} })
+    el.getBoundingClientRect = rect100
+    frame(0.016)
     h.positionSet.mockClear()
     fireEvent.pointerMove(el, { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 50 })
-    expect(h.positionSet).toHaveBeenCalled()
-    const x = h.positionSet.mock.calls.at(-1)?.[0] as number
-    expect(x).toBeGreaterThan(0)
+    frame(0.016)
+    const first = h.positionSet.mock.calls.at(-1)?.[0] as number
+    expect(first).toBeGreaterThan(0)
+    frame(10)
+    const settled = h.positionSet.mock.calls.at(-1)?.[0] as number
+    expect(settled).toBeGreaterThan(first)
+  })
+
+  it('fare hareketi Viewer\'ı yeniden render etmez (konum ref\'te)', () => {
+    setWebGL(true)
+    renderViewer()
+    const el = app()
+    el.getBoundingClientRect = rect100
+    fireEvent.pointerMove(el, { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 50 })
+    expect(el.dataset.yaw).toBe('0')
+  })
+
+  it('sürükleme sırasında paralaks devre dışıdır', () => {
+    setWebGL(true)
+    renderViewer()
+    const el = app()
+    el.getBoundingClientRect = rect100
+    Object.defineProperty(el, 'clientHeight', { value: 100, configurable: true })
+    el.setPointerCapture = () => {}
+    fireEvent.pointerMove(el, { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 50 })
+    frame(10)
+    expect(h.positionSet.mock.calls.at(-1)?.[0] as number).toBeGreaterThan(0)
+    fireEvent.pointerDown(el, { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 50, button: 0 })
+    frame(10)
+    expect(h.positionSet.mock.calls.at(-1)?.[0] as number).toBeCloseTo(0, 6)
+  })
+
+  it('kenar şeridi yok: düzlem taşma ölçeğiyle büyütülür', () => {
+    setWebGL(true)
+    renderViewer()
+    act(() => h.loaders['/p.png'].resolve())
+    act(() => h.loaders['/d.png'].resolve())
+    expect(screen.getByTestId('canvas').querySelector('mesh')?.getAttribute('scale')).toMatch(/^1\.\d+,1\.\d+,1\.\d+$/)
   })
 })
 
