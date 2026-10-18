@@ -10,13 +10,15 @@ const mocks = vi.hoisted(() => ({
   markerRemove: vi.fn(),
   fail: false,
   setWorkerUrl: vi.fn(),
+  mapOptions: null as Record<string, unknown> | null,
 }))
 
 vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?url', () => ({ default: '/assets/worker.mjs' }))
 
 vi.mock('maplibre-gl', () => {
   class Map {
-    constructor() {
+    constructor(options: Record<string, unknown>) {
+      mocks.mapOptions = options
       if (mocks.fail) throw new Error('WebGL yok')
     }
     on(type: string, fn: (e?: ClickEvent) => void) {
@@ -42,6 +44,7 @@ vi.mock('maplibre-gl', () => {
 })
 
 import { LocationPicker } from './LocationPicker'
+import { TURKEY_BOUNDS, TURKEY_ONLY_MESSAGE } from './turkey'
 
 afterEach(cleanup)
 
@@ -68,9 +71,9 @@ describe('LocationPicker', () => {
   it('geçerli sayı girişi onChange çağırır', () => {
     const onChange = vi.fn()
     render(<LocationPicker value={null} onChange={onChange} />)
-    fireEvent.change(lat(), { target: { value: '41.9' } })
-    fireEvent.change(lng(), { target: { value: '12.5' } })
-    expect(onChange).toHaveBeenLastCalledWith({ latitude: 41.9, longitude: 12.5 })
+    fireEvent.change(lat(), { target: { value: '39.9' } })
+    fireEvent.change(lng(), { target: { value: '32.5' } })
+    expect(onChange).toHaveBeenLastCalledWith({ latitude: 39.9, longitude: 32.5 })
   })
 
   it('geçersiz değerde hata gösterir, erişilebilirlik özniteliklerini koyar, onChange çağırmaz', () => {
@@ -88,18 +91,66 @@ describe('LocationPicker', () => {
 
   it('harita kabı adlandırılmış bölge', () => {
     render(<LocationPicker value={null} onChange={() => {}} />)
-    expect(screen.getByRole('region', { name: 'Dünya haritası' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Türkiye haritası' })).toBeInTheDocument()
   })
 
   it('harita tıklaması normalize edilmiş değerle onChange çağırır ve alanları günceller', () => {
     const onChange = vi.fn()
     render(<LocationPicker value={null} onChange={onChange} />)
     fireEvent.change(lat(), { target: { value: '95' } })
-    act(() => mocks.handlers.click({ lngLat: { lng: 190.123456, lat: 41.9 } }))
-    expect(onChange).toHaveBeenCalledWith({ latitude: 41.9, longitude: -169.8765 })
-    expect(lat().value).toBe('41.9')
-    expect(lng().value).toBe('-169.8765')
+    act(() => mocks.handlers.click({ lngLat: { lng: 32.123456, lat: 39.9 } }))
+    expect(onChange).toHaveBeenCalledWith({ latitude: 39.9, longitude: 32.1235 })
+    expect(lat().value).toBe('39.9')
+    expect(lng().value).toBe('32.1235')
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('harita Türkiye sınırlarıyla açılır, kaydırma genişletilmiş kutuyla sınırlanır', () => {
+    render(<LocationPicker value={null} onChange={() => {}} />)
+    expect(mocks.mapOptions?.bounds).toEqual(TURKEY_BOUNDS)
+    const max = mocks.mapOptions?.maxBounds as [[number, number], [number, number]]
+    expect(max[0][0]).toBeLessThan(TURKEY_BOUNDS[0][0])
+    expect(max[0][1]).toBeLessThan(TURKEY_BOUNDS[0][1])
+    expect(max[1][0]).toBeGreaterThan(TURKEY_BOUNDS[1][0])
+    expect(max[1][1]).toBeGreaterThan(TURKEY_BOUNDS[1][1])
+  })
+
+  it('Türkiye dışına tıklama onChange çağırmaz, alanları değiştirmez, mesaj gösterir', () => {
+    const onChange = vi.fn()
+    render(<LocationPicker value={null} onChange={onChange} />)
+    act(() => mocks.handlers.click({ lngLat: { lng: 23.73, lat: 37.98 } }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(lat().value).toBe('')
+    expect(lng().value).toBe('')
+    expect(screen.getByRole('alert')).toHaveTextContent(TURKEY_ONLY_MESSAGE)
+  })
+
+  it('Türkiye içine geçerli tıklama mesajı temizler', () => {
+    const onChange = vi.fn()
+    render(<LocationPicker value={null} onChange={onChange} />)
+    act(() => mocks.handlers.click({ lngLat: { lng: 23.73, lat: 37.98 } }))
+    act(() => mocks.handlers.click({ lngLat: { lng: 32.86, lat: 39.93 } }))
+    expect(onChange).toHaveBeenCalledWith({ latitude: 39.93, longitude: 32.86 })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('elle girilen Türkiye dışı konum mesaj gösterir, onChange çağırmaz; içeri giriş temizler', () => {
+    const onChange = vi.fn()
+    render(<LocationPicker value={null} onChange={onChange} />)
+    fireEvent.change(lat(), { target: { value: '37.98' } })
+    fireEvent.change(lng(), { target: { value: '23.73' } })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(TURKEY_ONLY_MESSAGE)
+    fireEvent.change(lng(), { target: { value: '26' } })
+    expect(onChange).toHaveBeenLastCalledWith({ latitude: 37.98, longitude: 26 })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('aralık dışı değer Türkiye mesajından önce gelir', () => {
+    render(<LocationPicker value={null} onChange={() => {}} />)
+    fireEvent.change(lat(), { target: { value: '95' } })
+    fireEvent.change(lng(), { target: { value: '12' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Enlem')
   })
 
   it('seçili konumu biçimlendirip gösterir ve işaretçiyi koyar', () => {
@@ -129,9 +180,9 @@ describe('LocationPicker', () => {
     const second = vi.fn()
     const { rerender } = render(<LocationPicker value={null} onChange={first} />)
     rerender(<LocationPicker value={null} onChange={second} />)
-    act(() => mocks.handlers.click({ lngLat: { lng: 10, lat: 20 } }))
+    act(() => mocks.handlers.click({ lngLat: { lng: 30, lat: 40 } }))
     expect(first).not.toHaveBeenCalled()
-    expect(second).toHaveBeenCalledWith({ latitude: 20, longitude: 10 })
+    expect(second).toHaveBeenCalledWith({ latitude: 40, longitude: 30 })
   })
 
   it('stil yüklenemezse hata gösterir, girişler çalışır', () => {
@@ -139,9 +190,9 @@ describe('LocationPicker', () => {
     render(<LocationPicker value={null} onChange={onChange} />)
     act(() => mocks.handlers.error())
     return screen.findByText(/Harita yüklenemedi/).then(() => {
-      fireEvent.change(lat(), { target: { value: '10' } })
-      fireEvent.change(lng(), { target: { value: '20' } })
-      expect(onChange).toHaveBeenLastCalledWith({ latitude: 10, longitude: 20 })
+      fireEvent.change(lat(), { target: { value: '38' } })
+      fireEvent.change(lng(), { target: { value: '30' } })
+      expect(onChange).toHaveBeenLastCalledWith({ latitude: 38, longitude: 30 })
     })
   })
 
@@ -157,9 +208,9 @@ describe('LocationPicker', () => {
     const onChange = vi.fn()
     render(<LocationPicker value={null} onChange={onChange} />)
     expect(screen.getByText(/Harita yüklenemedi/)).toBeInTheDocument()
-    fireEvent.change(lat(), { target: { value: '10' } })
-    fireEvent.change(lng(), { target: { value: '20' } })
-    expect(onChange).toHaveBeenLastCalledWith({ latitude: 10, longitude: 20 })
+    fireEvent.change(lat(), { target: { value: '38' } })
+    fireEvent.change(lng(), { target: { value: '30' } })
+    expect(onChange).toHaveBeenLastCalledWith({ latitude: 38, longitude: 30 })
   })
 
   it('unmount olunca haritayı kaldırır', () => {

@@ -3,6 +3,7 @@ import { Map as MapLibreMap, Marker, setWorkerUrl } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { formatCoordinates, toSelection, type Selection } from './coordinates'
+import { TURKEY_BOUNDS, TURKEY_MAX_BOUNDS, TURKEY_ONLY_MESSAGE, isInTurkeyBounds } from './turkey'
 import './LocationPicker.css'
 
 // Geliştirme için anahtarsız demo stili. Üretim karo sağlayıcısı açık karar; yalnızca bu sabit değişecek.
@@ -13,7 +14,7 @@ interface Props {
   onChange: (v: Selection) => void
 }
 
-type FieldError = { field: 'lat' | 'lng'; message: string }
+type FieldError = { field: 'lat' | 'lng' | null; message: string }
 
 const ERROR_ID = 'location-error'
 
@@ -55,7 +56,10 @@ export function LocationPicker({ value, onChange }: Props) {
     let map: MapLibreMap
     try {
       ensureWorkerUrl()
-      map = new MapLibreMap({ container: containerRef.current, style: MAP_STYLE_URL, center: [0, 20], zoom: 1 })
+      map = new MapLibreMap({ container: containerRef.current, style: MAP_STYLE_URL,
+        bounds: TURKEY_BOUNDS,
+        maxBounds: TURKEY_MAX_BOUNDS,
+      })
       let styleLoaded = false
       map.on('load', () => {
         styleLoaded = true
@@ -66,6 +70,10 @@ export function LocationPicker({ value, onChange }: Props) {
       })
       map.on('click', (e) => {
         const sel = toSelection(e.lngLat.lat, e.lngLat.lng)
+        if (!isInTurkeyBounds(sel.latitude, sel.longitude)) {
+          setFieldError({ field: null, message: TURKEY_ONLY_MESSAGE })
+          return
+        }
         setLatText(String(sel.latitude))
         setLngText(String(sel.longitude))
         setFieldError(null)
@@ -138,6 +146,10 @@ export function LocationPicker({ value, onChange }: Props) {
       setFieldError({ field: 'lng', message: 'Boylam -180 ile 180 arasında bir sayı olmalı.' })
       return
     }
+    if (!isInTurkeyBounds(latNum, lngNum)) {
+      setFieldError({ field: null, message: TURKEY_ONLY_MESSAGE })
+      return
+    }
     setFieldError(null)
     onChange(toSelection(latNum, lngNum))
   }
@@ -153,7 +165,7 @@ export function LocationPicker({ value, onChange }: Props) {
         ref={containerRef}
         className="location-map"
         role="region"
-        aria-label="Dünya haritası"
+        aria-label="Türkiye haritası"
         hidden={mapError}
       />
       <div className="location-fields">
