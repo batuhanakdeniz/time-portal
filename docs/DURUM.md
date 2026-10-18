@@ -17,7 +17,7 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 5. O şehrin merkezine ait açık lisanslı bir görsel bulunur.
 6. Görsel derinlik tahminiyle 3B'ye çevrilir.
 
-Ayrıntılar ve seçenekler: karar #37. Fazlar: `docs/BACKLOG.md`. Seçilen yılın yorumu (geçmiş/gelecek) Faz 3'te (#26).
+Karar #37 (**1B 2A 3D 4C 5A**): ilçe düzeyi (~970 ilçe), ilçe sınırları depoda (çevrimdışı), görsel Mapillary 360° → Wikimedia Commons (ücretsiz Mapillary anahtarı #44), panorama varsa 360°, yoksa 2.5B fotoğraf (#45), derinlik backend'de ONNX Runtime + Depth Anything V2 Small. Fazlar: `docs/BACKLOG.md`. Seçilen yılın yorumu (geçmiş/gelecek) Faz 3'te (#26).
 
 ## Kararlar
 
@@ -46,15 +46,15 @@ Ayrıntılar ve seçenekler: karar #37. Fazlar: `docs/BACKLOG.md`. Seçilen yıl
 
 ## Boru hattı
 
-Faz 1 (#37 kararlarına göre kesinleşecek):
+Faz 1 (karar #37):
 
 ```
 konum (Türkiye)
-  → CityLocator: il
-  → CityImageFinder: şehir merkezi görseli + atıf
-  → DepthEstimator: derinlik haritası (açık = yakın)
-  → sonuç: görsel, derinlik, tür, şehir, atıf
-  → viewer: 360° bakış (panorama) ya da 2.5B (fotoğraf)
+  → DistrictLocator: ilçe + il (#39)
+  → CityImageFinder: ilçe merkezi görseli + atıf (#40; Mapillary 360° → Commons)
+  → DepthEstimator: derinlik haritası, açık = yakın (#41)
+  → sonuç: görsel, derinlik, tür, ilçe/il, atıf (#42)
+  → viewer: 360° bakış (panorama) ya da 2.5B (fotoğraf, #45)
 ```
 
 Faz 3 ve sonrası (hedef):
@@ -88,7 +88,7 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 Güncel durum her zaman GitHub'da: `gh issue list --label F1-türkiye-2026`, `gh pr list`.
 
-1. Sahibi: karar #37 (Faz 1 akışını bloklar), #13 kurulumu.
-2. Karardan bağımsız: #38 (harita Türkiye'ye odaklı).
-3. Karardan sonra: #39 → #40 → #41 → #42.
+1. Yapılıyor: #39 (ilçe bulma), #45 (2.5B görüntüleyici).
+2. Sonra: #40 (görsel bulma) → #41 (3B üretici) → #42 (API + arayüz).
+3. Sahibi: #44 Mapillary anahtarı, #13 GitHub App ve `main` koruması seçimi.
 4. Sonra Faz 2: #5, #27, #33.
