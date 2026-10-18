@@ -8,6 +8,7 @@
 |---|---|---|
 | İlçe sınırları (ADM2) ve il sınırları (ADM1, yalnızca ilçe→il eşlemesi için) | [geoBoundaries](https://www.geoboundaries.org/) gbOpen TUR, sürüm 9469f09 (kaynak veri: OpenStreetMap / osm-boundaries.com, 2023-01-19) | **Open Data Commons Open Database License 1.0 (ODbL)**. Atıf: © OpenStreetMap contributors, geoBoundaries |
 | İlçe merkez koordinatları | [Wikidata](https://www.wikidata.org/) SPARQL (sınıf Q1147395 "district of Turkey", P625, P131) | CC0 |
+| İl merkezi koordinatları (`province-centers.tsv`) | [Wikidata](https://www.wikidata.org/) SPARQL (sınıf Q48336 "province of Turkey"; il başkenti P36 → P625, yoksa ilin kendi P625'i), 18.10.2026 | CC0 |
 
 ODbL gereği türetilmiş veritabanı (`districts.txt`) aynı lisansla paylaşılır ve atıf korunur. Arayüzde harita/ilçe verisi gösterilirken "© OpenStreetMap contributors" atfı yer almalıdır.
 
@@ -43,4 +44,19 @@ D<TAB>ad<TAB>il<TAB>enlem<TAB>boylam<TAB>W|I     yeni ilçe (W: Wikidata merkezi
 P                                                yeni poligon parçası (MultiPolygon için birden çok)
 O x y x y ...                                    dış halka (x = boylam, y = enlem; halka açık)
 H x y x y ...                                    delik (isteğe bağlı, birden çok olabilir)
+```
+
+## İl merkezleri (`province-centers.tsv`)
+
+81 ilin merkez noktası; `com.timeportal.geo.ProvinceCenters` yükler ve görsel zincirinin son adımında (#40, il merkezine yakın Commons fotoğrafı) kullanılır. Biçim: `il<TAB>enlem<TAB>boylam<TAB>C|P` (`C`: il başkentinin (şehir merkezi) koordinatı, `P`: başkent koordinatı yoksa ilin kendi koordinatı; şu an yalnızca Bingöl `P`). İl adları `districts.txt`'deki yazımla bire bir aynıdır. Neden başkent: ilin kendi P625 değeri çoğu zaman il yüzölçümünün ortasıdır (ör. Antalya'da şehir merkezinin ~35 km kuzeyi), şehir merkezi değildir.
+
+Sorgu (WDQS, `Accept: application/sparql-results+json`):
+
+```
+SELECT ?item ?itemLabel ?cap ?coord ?pcoord WHERE {
+  ?item wdt:P31 wd:Q48336 .
+  OPTIONAL { ?item wdt:P36 ?cap . ?cap wdt:P625 ?coord . }
+  OPTIONAL { ?item wdt:P625 ?pcoord }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "tr,en". }
+}
 ```

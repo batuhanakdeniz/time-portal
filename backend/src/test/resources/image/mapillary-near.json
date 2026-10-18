@@ -1,0 +1,6 @@
+{"data":[
+{"id":"1001","thumb_2048_url":"https://scontent.example/far-600m.jpg","width":8192,"height":4096,"is_pano":true,"creator":{"username":"uzak","id":"1"},"captured_at":1690000000000,"computed_geometry":{"type":"Point","coordinates":[29.0,41.0054]}},
+{"id":"1002","thumb_2048_url":"https://scontent.example/near-250m.jpg","width":8192,"height":4096,"is_pano":true,"creator":{"username":"orta","id":"2"},"captured_at":1690000000000,"computed_geometry":{"type":"Point","coordinates":[29.0,41.00225]}},
+{"id":"1003","thumb_2048_url":"https://scontent.example/nearest-100m.jpg","width":6000,"height":3000,"is_pano":true,"creator":{"username":"yakin_kullanici","id":"3"},"captured_at":1690000000000,"computed_geometry":{"type":"Point","coordinates":[29.0,41.0009]}},
+{"id":"1004","thumb_2048_url":"https://scontent.example/not-pano-10m.jpg","width":4000,"height":3000,"is_pano":false,"creator":{"username":"duz","id":"4"},"captured_at":1690000000000,"computed_geometry":{"type":"Point","coordinates":[29.0,41.0001]}}
+]}
