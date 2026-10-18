@@ -149,53 +149,60 @@ describe('kenar sönümleme', () => {
 describe('taşma payı (overscan)', () => {
   const FOV = 45
   type V3 = [number, number, number]
-  const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-  const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
   const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
   const norm = (a: V3): V3 => {
     const l = Math.hypot(...a)
     return [a[0] / l, a[1] / l, a[2] / l]
   }
 
-  /** Düzlem kenar noktalarının kadraja göre en küçük açısal oranları (>= tan(yarı fov) ise kadraj dışında). */
-  function edgeRatios(yaw: number, pitch: number, aspect: number, scale: number) {
+  /**
+   * Kadrajın 4 köşesinden geçen ışınların z=0 düzlemini vurduğu noktalar. Düzlem kadrajı tamamen
+   * kaplıyorsa hepsi [-w,w]x[-h,h] içindedir (dışbükey olduğundan köşeler yeterli).
+   */
+  function frameCornerHits(yaw: number, pitch: number, aspect: number): [number, number][] {
+    const tv = Math.tan((FOV * Math.PI) / 360)
+    const th = tv * aspect
     const pos = orbitPosition(yaw, pitch, cameraDistance(FOV, 1))
     const f = norm([-pos[0], -pos[1], -pos[2]])
     const right = norm(cross(f, [0, 1, 0]))
     const up = cross(right, f)
-    const lat = (p: V3) => {
-      const v = sub(p, pos)
-      return Math.abs(dot(v, right)) / dot(v, f)
+    const hits: [number, number][] = []
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const d: V3 = [
+          f[0] + sx * th * right[0] + sy * tv * up[0],
+          f[1] + sx * th * right[1] + sy * tv * up[1],
+          f[2] + sx * th * right[2] + sy * tv * up[2],
+        ]
+        const t = -pos[2] / d[2]
+        hits.push([pos[0] + t * d[0], pos[1] + t * d[1]])
+      }
     }
-    const vert = (p: V3) => {
-      const v = sub(p, pos)
-      return Math.abs(dot(v, up)) / dot(v, f)
-    }
-    const w = scale * aspect
-    const h = scale
-    return {
-      horiz: Math.min(lat([w, 0, 0]), lat([-w, 0, 0])),
-      vert: Math.min(vert([0, h, 0]), vert([0, -h, 0])),
-    }
+    return hits
   }
 
-  it('zoom=1 ve en uç yaw/pitch kombinasyonlarında kenar kadraj dışında kalır', () => {
-    const tv = Math.tan((FOV * Math.PI) / 360)
+  const covers = (hits: [number, number][], aspect: number, s: number) =>
+    hits.every(([x, y]) => Math.abs(x) <= s * aspect && Math.abs(y) <= s)
+
+  it('sürükleme sınırı + paralaks birleşiminde, köşe kombinasyonlarında dahi düzlem kadrajı tamamen kaplar', () => {
     for (const aspect of [1.0, 1.5, 2.4]) {
       const s = overscanScale(FOV, aspect)
-      for (const yaw of [-YAW_LIMIT, 0, YAW_LIMIT]) {
-        for (const pitch of [-PITCH_LIMIT, 0, PITCH_LIMIT]) {
-          const r = edgeRatios(yaw, pitch, aspect, s)
-          expect(r.horiz).toBeGreaterThanOrEqual(tv * aspect)
-          expect(r.vert).toBeGreaterThanOrEqual(tv)
+      for (const dy of [-YAW_LIMIT, 0, YAW_LIMIT]) {
+        for (const dp of [-PITCH_LIMIT, 0, PITCH_LIMIT]) {
+          for (const px of [-1, 0, 1]) {
+            for (const py of [-1, 0, 1]) {
+              const r = effectiveRotation({ yaw: dy, pitch: dp, zoom: 1 }, { x: px, y: py })
+              expect(covers(frameCornerHits(r.yaw, r.pitch, aspect), aspect, s)).toBe(true)
+            }
+          }
         }
       }
     }
   })
 
-  it('ölçek 1 olsaydı en uç açıda kenar kadraja girerdi (ölçek gerekli)', () => {
-    const r = edgeRatios(YAW_LIMIT, 0, 1.5, 1)
-    expect(r.horiz).toBeLessThan(Math.tan((FOV * Math.PI) / 360) * 1.5)
+  it('ölçek 1 olsaydı köşede kadraj düzlemin dışına taşardı (ölçek gerekli)', () => {
+    const hits = frameCornerHits(YAW_LIMIT, PITCH_LIMIT, 1.5)
+    expect(covers(hits, 1.5, 1)).toBe(false)
     expect(overscanScale(FOV, 1.5)).toBeGreaterThan(1)
   })
 

@@ -124,22 +124,44 @@ export function cameraDistance(fovDeg: number, zoom: number, planeHeight = 2): n
 export const OVERSCAN_MARGIN = 1.02
 
 /**
- * Düzlem ölçeği (>= 1): en uç yaw/pitch'te bile düzlemin kenarı kadraj dışında kalır (bilinçli hafif kırpma).
- * Kamera yörüngede dönünce düzlemin uzak kenarı merkeze yaklaşık olarak w·cosθ / (D + w·sinθ) açısında görünür;
- * bunun kadraj yarı açısının tanjantından küçük olmaması için gereken yarı boyut çözülür.
- * aspect: kadrajın (ve düzlemin) en/boy oranı. Düzlem yüksekliği 2, kamera uzaklığı zoom=1'de sığdırma uzaklığıdır.
+ * Düzlem ölçeği (>= 1): en uç yaw/pitch'te (sürükleme sınırı; paralaks toplamı da effectiveRotation ile aynı
+ * sınıra kenetlenir) kadrajın 4 köşesinden geçen ışınlar z=0 düzlemini vurur; düzlemin hepsini kaplaması için
+ * gereken yarı boyut bütün uç açı kombinasyonları (yaw ve pitch birlikte, köşeler dahil) üzerinden alınır.
+ * Bu bilinçli bir hafif kırpmadır. aspect: kadrajın (ve düzlemin) en/boy oranı; düzlem yüksekliği 2, zoom=1.
  */
 export function overscanScale(fovDeg: number, aspect: number): number {
-  const tv = Math.tan((fovDeg * Math.PI) / 360)
   const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 1.5
+  const tv = Math.tan((fovDeg * Math.PI) / 360)
   const th = tv * a
-  const rad = Math.PI / 180
-  const sy = Math.cos(YAW_LIMIT * rad)
-  const sp = Math.cos(PITCH_LIMIT * rad)
-  const fy = sy - th * Math.sin(YAW_LIMIT * rad)
-  const fp = sp - tv * Math.sin(PITCH_LIMIT * rad)
-  if (fy <= 0 || fp <= 0) return 2
-  return Math.max(1, (1 / fy) * OVERSCAN_MARGIN, (1 / fp) * OVERSCAN_MARGIN)
+  const dist = cameraDistance(fovDeg, 1)
+  let need = 1
+  for (const yaw of [-YAW_LIMIT, YAW_LIMIT]) {
+    for (const pitch of [-PITCH_LIMIT, PITCH_LIMIT]) {
+      const [px, py, pz] = orbitPosition(yaw, pitch, dist)
+      const fl = Math.hypot(px, py, pz)
+      const f = [-px / fl, -py / fl, -pz / fl]
+      // right = f x up(0,1,0), normalize; up2 = right x f
+      let rx = -f[2]
+      let rz = f[0]
+      const rl = Math.hypot(rx, rz)
+      rx /= rl
+      rz /= rl
+      const ux = -rz * f[1]
+      const uy = rz * f[0] - rx * f[2]
+      const uz = rx * f[1]
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          const dx = f[0] + sx * th * rx + sy * tv * ux
+          const dy = f[1] + sy * tv * uy
+          const dz = f[2] + sx * th * rz + sy * tv * uz
+          if (dz >= 0) return 2 * a
+          const t = -pz / dz
+          need = Math.max(need, Math.abs(px + t * dx) / a, Math.abs(py + t * dy))
+        }
+      }
+    }
+  }
+  return need * OVERSCAN_MARGIN
 }
 
 /** Paralaks yumuşatma: hedefe doğru kare süresinden bağımsız üssel yaklaşım. */
