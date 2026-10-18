@@ -29,10 +29,20 @@ public class CachingCityImageFinder implements CityImageFinder {
 	private final Duration mapillaryTtl;
 	private final Duration commonsTtl;
 	private final Duration emptyTtl;
+	private final Duration transientTtl;
 	private final Map<String, Cached> cache;
 
 	public CachingCityImageFinder(CityImageFinder delegate, Clock clock, Duration mapillaryTtl, Duration commonsTtl,
 			Duration emptyTtl, int maxEntries) {
+		this(delegate, clock, mapillaryTtl, commonsTtl, emptyTtl, emptyTtl, maxEntries);
+	}
+
+	/**
+	 * @param transientTtl zincir "geçici hata" bildirdiğinde (kaynak hatası, süre bütçesi aşımı) sonuç
+	 * (Commons'tan bile olsa) en çok bu kadar saklanır
+	 */
+	public CachingCityImageFinder(CityImageFinder delegate, Clock clock, Duration mapillaryTtl, Duration commonsTtl,
+			Duration emptyTtl, Duration transientTtl, int maxEntries) {
 		if (maxEntries < 1) {
 			throw new IllegalArgumentException("maxEntries must be at least 1");
 		}
@@ -41,6 +51,7 @@ public class CachingCityImageFinder implements CityImageFinder {
 		this.mapillaryTtl = mapillaryTtl;
 		this.commonsTtl = commonsTtl;
 		this.emptyTtl = emptyTtl;
+		this.transientTtl = transientTtl;
 		this.cache = new LinkedHashMap<>(16, 0.75f, true) {
 			@Override
 			protected boolean removeEldestEntry(Map.Entry<String, Cached> eldest) {
@@ -59,8 +70,13 @@ public class CachingCityImageFinder implements CityImageFinder {
 				return e.value();
 			}
 		}
-		Optional<CityImage> result = delegate.find(district);
-		Instant expires = clock.instant().plus(ttlFor(result));
+		FindOutcome outcome = delegate.findDetailed(district);
+		Optional<CityImage> result = outcome.image();
+		Duration ttl = ttlFor(result);
+		if (outcome.degraded() && transientTtl.compareTo(ttl) < 0) {
+			ttl = transientTtl;
+		}
+		Instant expires = clock.instant().plus(ttl);
 		synchronized (cache) {
 			cache.put(key, new Cached(result, expires));
 		}

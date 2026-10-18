@@ -1,12 +1,17 @@
 package com.timeportal.image;
 
 import java.io.IOException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -38,14 +43,42 @@ public class MapillaryImageSource implements GeoImageSource {
 	static final int MAX_SPLIT_DEPTH = 3;
 	static final int LIMIT = 200;
 
+	/** Bir aramada en çok bu kadar HTTP isteği (hücre + bölünmüş alt hücreler). */
+	static final int MAX_REQUESTS = 40;
+	/** Bundan eski görüntüler yalnızca yenisi yoksa seçilir. */
+	static final Duration MAX_PREFERRED_AGE = Duration.ofDays(3650);
+	static final int MAX_USERNAME_CHARS = 80;
+	private static final String HTTPS = "https://";
+
+	private static final Logger log = LoggerFactory.getLogger(MapillaryImageSource.class);
 	private static final JsonMapper JSON = JsonMapper.builder().build();
 
 	private final ImageHttp http;
 	private final String token;
+	private final Clock clock;
 
 	public MapillaryImageSource(ImageHttp http, String token) {
+		this(http, token, Clock.systemUTC());
+	}
+
+	public MapillaryImageSource(ImageHttp http, String token, Clock clock) {
 		this.http = http;
 		this.token = token == null ? "" : token.strip();
+		this.clock = clock;
+	}
+
+	/** Anahtar yalnızca görünür ASCII karakterlerden oluşmalı (boşluk/kontrol karakteri başlığı bozar ya da sızdırır). */
+	static boolean isValidToken(String token) {
+		if (token == null || token.isEmpty()) {
+			return false;
+		}
+		for (int i = 0; i < token.length(); i++) {
+			char c = token.charAt(i);
+			if (c < 0x21 || c > 0x7E) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@Override
@@ -55,21 +88,82 @@ public class MapillaryImageSource implements GeoImageSource {
 
 	@Override
 	public Optional<CityImage> find(double latitude, double longitude, double radiusMeters) {
-		Best best = new Best(radiusMeters);
-		List<double[]> tiles = new ArrayList<>(GeoMath.bboxTiles(latitude, longitude, radiusMeters, MAX_SPAN_DEG));
-		tiles.sort(Comparator.comparingDouble(t -> GeoMath.distanceToBoxMeters(latitude, longitude, t)));
-		for (double[] t : tiles) {
-			scan(latitude, longitude, t, 0, best);
-		}
-		return Optional.ofNullable(best.item).map(MapillaryImageSource::toImage);
+		return find(latitude, longitude, radiusMeters, Deadline.none());
 	}
 
-	private static final class Best {
+	@Override
+	public Optional<CityImage> find(double latitude, double longitude, double radiusMeters, Deadline deadline) {
+		Scan scan = new Scan(radiusMeters, deadline);
+		List<double[]> tiles = new ArrayList<>(GeoMath.bboxTiles(latitude, longitude, radiusMeters, MAX_SPAN_DEG));
+		tiles.sort(Comparator.comparingDouble(t -> GeoMath.distanceToBoxMeters(latitude, longitude, t)));
+		try {
+			for (double[] t : tiles) {
+				if (!scan.canContinue()) {
+					break;
+				}
+				scanTile(latitude, longitude, t, 0, scan);
+			}
+		}
+		catch (ImageSourceException e) {
+			if (!scan.hasResult()) {
+				throw e;
+			}
+			log.warn("Mapillary cell failed, returning the best panorama found so far: {}", e.getMessage());
+		}
+		return Optional.ofNullable(scan.result()).map(MapillaryImageSource::toImage);
+	}
+
+	/** En iyi adayı tutar: yeni görüntüler eskilere (>10 yıl) tercih edilir, sonra merkeze yakınlık. */
+	private static final class Slot {
 		double distance;
 		JsonNode item;
 
-		Best(double radius) {
+		Slot(double radius) {
 			this.distance = radius;
+		}
+
+		void offer(JsonNode candidate, double d) {
+			if (d < distance || (d == distance && item == null)) {
+				item = candidate;
+				distance = d;
+			}
+		}
+	}
+
+	private final class Scan {
+		final Slot recent;
+		final Slot old;
+		final Deadline deadline;
+		int requests;
+
+		Scan(double radius, Deadline deadline) {
+			this.recent = new Slot(radius);
+			this.old = new Slot(radius);
+			this.deadline = deadline;
+		}
+
+		boolean canContinue() {
+			return !deadline.expired() && requests < MAX_REQUESTS;
+		}
+
+		/** Yalnızca yeni aday uzak hücreleri eler; eski aday daha yeni bir görüntüyü engellememeli. */
+		double pruneDistance() {
+			return recent.distance;
+		}
+
+		boolean hasResult() {
+			return recent.item != null || old.item != null;
+		}
+
+		JsonNode result() {
+			return recent.item != null ? recent.item : old.item;
+		}
+
+		void offer(JsonNode item, double d) {
+			long capturedAt = item.path("captured_at").asLong(0);
+			boolean tooOld = capturedAt > 0
+					&& Instant.ofEpochMilli(capturedAt).isBefore(clock.instant().minus(MAX_PREFERRED_AGE));
+			(tooOld ? old : recent).offer(item, d);
 		}
 	}
 
@@ -79,12 +173,13 @@ public class MapillaryImageSource implements GeoImageSource {
 		}
 	}
 
-	private void scan(double lat, double lon, double[] tile, int depth, Best best) {
-		if (GeoMath.distanceToBoxMeters(lat, lon, tile) >= best.distance) {
+	private void scanTile(double lat, double lon, double[] tile, int depth, Scan scan) {
+		if (GeoMath.distanceToBoxMeters(lat, lon, tile) >= scan.pruneDistance() || !scan.canContinue()) {
 			return;
 		}
 		JsonNode data;
 		try {
+			scan.requests++;
 			data = fetch(tile);
 		}
 		catch (ShrinkRequested e) {
@@ -98,21 +193,17 @@ public class MapillaryImageSource implements GeoImageSource {
 					new double[] { midLon, midLat, tile[2], tile[3] }));
 			parts.sort(Comparator.comparingDouble(t -> GeoMath.distanceToBoxMeters(lat, lon, t)));
 			for (double[] part : parts) {
-				scan(lat, lon, part, depth + 1, best);
+				scanTile(lat, lon, part, depth + 1, scan);
 			}
 			return;
 		}
 		for (JsonNode item : data) {
 			JsonNode coords = item.path("computed_geometry").path("coordinates");
 			if (!coords.isArray() || coords.size() < 2 || !item.path("is_pano").asBoolean(false)
-					|| text(item.path("thumb_2048_url")).isEmpty()) {
+					|| !text(item.path("thumb_2048_url")).startsWith(HTTPS)) {
 				continue;
 			}
-			double d = GeoMath.haversineMeters(lat, lon, coords.get(1).asDouble(), coords.get(0).asDouble());
-			if (d < best.distance || (d == best.distance && best.item == null)) {
-				best.item = item;
-				best.distance = d;
-			}
+			scan.offer(item, GeoMath.haversineMeters(lat, lon, coords.get(1).asDouble(), coords.get(0).asDouble()));
 		}
 	}
 
@@ -127,13 +218,16 @@ public class MapillaryImageSource implements GeoImageSource {
 			}
 			return data;
 		}
+		catch (ImageSourceException e) {
+			throw e;
+		}
 		catch (HttpStatusException e) {
 			if (e.status() == 500 && isReduceDataError(e.body())) {
 				throw new ShrinkRequested();
 			}
 			throw new ImageSourceException("Mapillary request failed: HTTP " + e.status());
 		}
-		catch (IOException | JacksonException e) {
+		catch (IOException | RuntimeException e) {
 			// Neden zincirlenmez: iletim katmanı mesajına anahtar karışmış olsa bile sızmasın.
 			throw new ImageSourceException("Mapillary request failed: " + redact(e.getClass().getSimpleName() + " "
 					+ e.getMessage()));
@@ -154,11 +248,19 @@ public class MapillaryImageSource implements GeoImageSource {
 		int h = item.path("height").asInt(0);
 		// thumb_2048_url 2048 piksel genişliğindedir.
 		int height = w > 0 && h > 0 ? (int) Math.round(2048.0 * h / w) : 1024;
-		String user = text(item.path("creator").path("username"));
+		String user = cap(text(item.path("creator").path("username")), MAX_USERNAME_CHARS);
 		String author = "© Mapillary katkıcıları" + (user.isEmpty() ? "" : ", " + user);
 		String id = text(item.path("id"));
 		return new CityImage(text(item.path("thumb_2048_url")), ImageKind.PANORAMA_360, 2048, height,
 				new Attribution(author, LICENSE, LICENSE_URL, "https://www.mapillary.com/app/?pKey=" + id));
+	}
+
+	static String cap(String s, int maxChars) {
+		String t = s.strip();
+		if (t.codePointCount(0, t.length()) <= maxChars) {
+			return t;
+		}
+		return t.substring(0, t.offsetByCodePoints(0, maxChars)).strip();
 	}
 
 	private static String text(JsonNode n) {

@@ -122,4 +122,65 @@ class CachingCityImageFinderTest {
 		assertThatThrownBy(() -> new CachingCityImageFinder(delegate, new MutableClock(), Duration.ZERO, Duration.ZERO,
 				Duration.ZERO, 0)).isInstanceOf(IllegalArgumentException.class);
 	}
+
+	private static class Degraded implements CityImageFinder {
+		final AtomicInteger calls = new AtomicInteger();
+		boolean degraded = true;
+		Optional<CityImage> result;
+
+		Degraded(Optional<CityImage> result) {
+			this.result = result;
+		}
+
+		@Override
+		public Optional<CityImage> find(District district) {
+			return findDetailed(district).image();
+		}
+
+		@Override
+		public FindOutcome findDetailed(District district) {
+			calls.incrementAndGet();
+			return new FindOutcome(result, degraded);
+		}
+	}
+
+	private CachingCityImageFinder cacheWithTransient(CityImageFinder delegate, MutableClock clock) {
+		return new CachingCityImageFinder(delegate, clock, Duration.ofMinutes(30), Duration.ofHours(12),
+				Duration.ofMinutes(10), Duration.ofMinutes(2), 10);
+	}
+
+	@Test
+	void degradedCommonsResultIsCachedOnlyBriefly() {
+		MutableClock clock = new MutableClock();
+		Degraded delegate = new Degraded(Optional.of(image("https://commons.wikimedia.org/wiki/File:Z.jpg")));
+		CachingCityImageFinder cache = cacheWithTransient(delegate, clock);
+
+		cache.find(A);
+		clock.now = clock.now.plus(Duration.ofMinutes(1));
+		cache.find(A);
+		assertThat(delegate.calls).hasValue(1);
+
+		clock.now = clock.now.plus(Duration.ofMinutes(2));
+		cache.find(A);
+		assertThat(delegate.calls).hasValue(2);
+	}
+
+	@Test
+	void degradedEmptyResultUsesTheTransientTtlAndHealthyOnesKeepLongTtl() {
+		MutableClock clock = new MutableClock();
+		Degraded delegate = new Degraded(Optional.empty());
+		CachingCityImageFinder cache = cacheWithTransient(delegate, clock);
+		cache.find(A);
+		clock.now = clock.now.plus(Duration.ofMinutes(3));
+		cache.find(A);
+		assertThat(delegate.calls).hasValue(2);
+
+		Degraded healthy = new Degraded(Optional.of(image("https://commons.wikimedia.org/wiki/File:Z.jpg")));
+		healthy.degraded = false;
+		CachingCityImageFinder cache2 = cacheWithTransient(healthy, clock);
+		cache2.find(A);
+		clock.now = clock.now.plus(Duration.ofHours(11));
+		cache2.find(A);
+		assertThat(healthy.calls).hasValue(1);
+	}
 }

@@ -16,4 +16,12 @@ public interface GeoImageSource {
 	 * @throws ImageSourceException kaynak hata verirse
 	 */
 	Optional<CityImage> find(double latitude, double longitude, double radiusMeters);
+
+	/**
+	 * Süre bütçeli arama; bütçe dolunca kaynak elindeki en iyi sonucu ya da boşu döner. Varsayılan
+	 * uygulama bütçeyi yok sayar.
+	 */
+	default Optional<CityImage> find(double latitude, double longitude, double radiusMeters, Deadline deadline) {
+		return find(latitude, longitude, radiusMeters);
+	}
 }

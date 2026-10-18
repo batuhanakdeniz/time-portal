@@ -3,7 +3,9 @@ package com.timeportal.image;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 class WikimediaCommonsImageSourceTest {
 
@@ -80,5 +82,109 @@ class WikimediaCommonsImageSourceTest {
 			.hasMessageContaining("503");
 		assertThatThrownBy(() -> new WikimediaCommonsImageSource(new FakeHttp(u -> "not json")).find(41.0, 29.0, 1000))
 			.isInstanceOf(ImageSourceException.class);
+	}
+
+	private static final JsonMapper JSON = JsonMapper.builder().build();
+
+	private static String q(String v) {
+		return JSON.writeValueAsString(v);
+	}
+
+	/** Tek sayfalık 4000x2000 (2:1) Commons yanıtı. */
+	private static String page(String title, String categories, String artist, String descriptionUrl, String licenseUrl) {
+		return "{\"query\":{\"pages\":{\"1\":{\"pageid\":1,\"ns\":6,\"title\":" + q(title) + ",\"index\":1,\"imageinfo\":["
+				+ "{\"thumburl\":\"https://upload.example/thumb/a/2048px-A.jpg\",\"url\":\"https://upload.example/a.jpg\","
+				+ "\"descriptionurl\":" + q(descriptionUrl) + ",\"width\":4000,\"height\":2000,\"mime\":\"image/jpeg\","
+				+ "\"extmetadata\":{\"LicenseShortName\":{\"value\":\"CC BY 4.0\"},\"LicenseUrl\":{\"value\":" + q(licenseUrl)
+				+ "},\"Artist\":{\"value\":" + q(artist) + "},\"Categories\":{\"value\":" + q(categories) + "}}}]}}}}";
+	}
+
+	private static Optional<CityImage> find(String body) {
+		return new WikimediaCommonsImageSource(new FakeHttp(u -> body)).find(41.0, 29.0, 1000);
+	}
+
+	private static final String DESC = "https://commons.wikimedia.org/wiki/File:A.jpg";
+	private static final String CC = "https://creativecommons.org/licenses/by/4.0/";
+
+	@Test
+	void cleanHtmlStripsScriptTags() {
+		assertThat(WikimediaCommonsImageSource.cleanHtml("Ali <script>alert(1)</script> Veli")).doesNotContain("<", ">", "script>")
+			.startsWith("Ali").endsWith("Veli");
+	}
+
+	@Test
+	void cleanHtmlDoesNotRevealTagsThroughEncodedEntities() {
+		String r = WikimediaCommonsImageSource.cleanHtml("&lt;script&gt;alert(1)&lt;/script&gt;");
+
+		assertThat(r).doesNotContain("<").doesNotContain(">");
+		assertThat(WikimediaCommonsImageSource.cleanHtml("&amp;lt;b&amp;gt; &#60;i&#62; &#x3C;u&#x3E;")).doesNotContain("<", ">");
+	}
+
+	@Test
+	void cleanHtmlDropsUnclosedTagFragments() {
+		assertThat(WikimediaCommonsImageSource.cleanHtml("Foto <img src=x onerror=alert(1)")).isEqualTo("Foto");
+		assertThat(WikimediaCommonsImageSource.cleanHtml("<a href=\"x\" onclick=y")).isEmpty();
+	}
+
+	@Test
+	void cleanHtmlHandlesNestedTagsAndEntities() {
+		assertThat(WikimediaCommonsImageSource.cleanHtml("<div><a href=\"https://x\"><b>Ali</b> &amp; <i>Veli</i></a></div>"))
+			.isEqualTo("Ali & Veli");
+		assertThat(WikimediaCommonsImageSource.cleanHtml("<<b>>x<</b>>")).doesNotContain("<", ">");
+	}
+
+	@Test
+	void cleanHtmlCapsLength() {
+		String r = WikimediaCommonsImageSource.cleanHtml("<b>" + "a".repeat(5000) + "</b>");
+
+		assertThat(r).hasSize(WikimediaCommonsImageSource.MAX_AUTHOR_CHARS);
+	}
+
+	@Test
+	void nonHttpsLicenseUrlIsDroppedAndNonHttpsSourceCandidateIsRejected() {
+		CityImage ok = find(page("File:A.jpg", "Turkey", "Ali", DESC, "javascript:alert(1)")).orElseThrow();
+		assertThat(ok.attribution().licenseUrl()).isNull();
+		assertThat(find(page("File:A.jpg", "Turkey", "Ali", DESC, "http://creativecommons.org/x")).orElseThrow()
+			.attribution().licenseUrl()).isNull();
+		assertThat(find(page("File:A.jpg", "Turkey", "Ali", DESC, CC)).orElseThrow().attribution().licenseUrl()).isEqualTo(CC);
+
+		assertThat(find(page("File:A.jpg", "Turkey", "Ali", "http://commons.wikimedia.org/wiki/File:A.jpg", CC))).isEmpty();
+		assertThat(find(page("File:A.jpg", "Turkey", "Ali", "javascript:alert(1)", CC))).isEmpty();
+	}
+
+	@Test
+	void imageUrlMustBeHttps() {
+		String body = page("File:A.jpg", "Turkey", "Ali", DESC, CC).replace("https://upload.example/thumb/a/2048px-A.jpg",
+				"http://upload.example/thumb/a/2048px-A.jpg");
+
+		assertThat(find(body)).isEmpty();
+	}
+
+	@Test
+	void panoramaNeedsASpecificMarkNotJustTheNumber360() {
+		assertThat(find(page("File:Route 360.jpg", "Roads in Turkey", "Ali", DESC, CC)).orElseThrow().kind())
+			.isEqualTo(ImageKind.PHOTO);
+		assertThat(find(page("File:A.jpg", "360° panoramas of Turkey", "Ali", DESC, CC)).orElseThrow().kind())
+			.isEqualTo(ImageKind.PANORAMA_360);
+		assertThat(find(page("File:A 360 degree view.jpg", "Turkey", "Ali", DESC, CC)).orElseThrow().kind())
+			.isEqualTo(ImageKind.PANORAMA_360);
+		assertThat(find(page("File:A.jpg", "Photosphere images", "Ali", DESC, CC)).orElseThrow().kind())
+			.isEqualTo(ImageKind.PANORAMA_360);
+	}
+
+	@Test
+	void krokiPosterAndScreenshotAreExcluded() {
+		for (String bad : new String[] { "File:Kroki ilce.jpg", "File:Konser poster.jpg", "File:Game screenshot.jpg" }) {
+			assertThat(find(page(bad, "Turkey", "Ali", DESC, CC))).as(bad).isEmpty();
+		}
+		assertThat(find(page("File:A.jpg", "Posters of Turkey", "Ali", DESC, CC))).isEmpty();
+	}
+
+	@Test
+	void authorIsSanitizedAndCapped() {
+		CityImage image = find(page("File:A.jpg", "Turkey", "<a href=\"x\">" + "b".repeat(1000) + "</a><script>x", DESC, CC))
+			.orElseThrow();
+
+		assertThat(image.attribution().author()).hasSize(WikimediaCommonsImageSource.MAX_AUTHOR_CHARS).doesNotContain("<", ">");
 	}
 }
