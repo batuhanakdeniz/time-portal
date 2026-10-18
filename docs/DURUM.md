@@ -6,6 +6,19 @@ Yeni bir oturumda bu dosyayı önce oku. Çalışma kuralları için `CLAUDE.md`
 
 Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. Ardından dünya üzerinde bir **konum** seçer. Seçilen konum ve tarih için yapay zekayla **3 boyutlu bir görsel** üretilir. Kullanıcı bu görselde 360° dönebilir ve küçük bir alanda ileri-geri hareket edebilir.
 
+## Güncel kapsam (18.10.2026, #26)
+
+İlk ürün **yalnızca Türkiye** ve **2026 görünümü** ile çalışır:
+
+1. Kullanıcı yıl seçer (şimdilik üretimi etkilemez, sonuçta "2026 görünümü" notu gösterilir).
+2. Haritadan Türkiye'de bir konum seçer.
+3. "Sahne oluştur"a tıklar.
+4. Konumun ait olduğu şehir bulunur.
+5. O şehrin merkezine ait açık lisanslı bir görsel bulunur.
+6. Görsel derinlik tahminiyle 3B'ye çevrilir.
+
+Ayrıntılar ve seçenekler: karar #37. Fazlar: `docs/BACKLOG.md`. Seçilen yılın yorumu (geçmiş/gelecek) Faz 3'te (#26).
+
 ## Kararlar
 
 - **3D yaklaşım:** Panorama + derinlik. Yapay zekayla 360° (equirectangular) panorama üretilir, derinlik haritası çıkarılır, Three.js'te paralaks/mesh ile gösterilir. Hareket alanı küçüktür (kafa kıpırdatma ölçeğinde).
@@ -32,6 +45,19 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 - **Dış girdi:** Ajan yalnızca sahibinin açtığı issue'lardan tetiklenir.
 
 ## Boru hattı
+
+Faz 1 (#37 kararlarına göre kesinleşecek):
+
+```
+konum (Türkiye)
+  → CityLocator: il
+  → CityImageFinder: şehir merkezi görseli + atıf
+  → DepthEstimator: derinlik haritası (açık = yakın)
+  → sonuç: görsel, derinlik, tür, şehir, atıf
+  → viewer: 360° bakış (panorama) ya da 2.5B (fotoğraf)
+```
+
+Faz 3 ve sonrası (hedef):
 
 ```
 tarih + konum
@@ -60,9 +86,9 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 ## Sıradaki adım
 
-Güncel durum her zaman GitHub'da: `gh issue list --label P0-şimdi`, `gh pr list`.
+Güncel durum her zaman GitHub'da: `gh issue list --label F1-türkiye-2026`, `gh pr list`.
 
-1. Ana ekran uçtan uca çalışıyor (#24): yıl + konum seç → sahne üret → önizleme (sahte üretici).
-2. Paralel geliştiriliyor: #4 (360° görüntüleyici), #9 (kural tabanlı PromptComposer), #19 (iş temizliği, eşzamanlılık), #10 (önbellek).
-3. Sonra: #5 (derinlikli hareket, #4'e bağlı), #27 (OpenFreeMap), PromptComposer'ın akışa bağlanması.
-4. Sahibi: #13 kurulumu (GitHub App, routine).
+1. Sahibi: karar #37 (Faz 1 akışını bloklar), #13 kurulumu.
+2. Karardan bağımsız: #38 (harita Türkiye'ye odaklı).
+3. Karardan sonra: #39 → #40 → #41 → #42.
+4. Sonra Faz 2: #5, #27, #33.
