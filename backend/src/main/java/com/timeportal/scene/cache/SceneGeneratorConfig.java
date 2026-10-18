@@ -11,8 +11,9 @@ import org.springframework.context.annotation.Primary;
 
 /**
  * Enjekte edilen {@link SceneGenerator}'ı belirler. Üretici {@code timeportal.generator} ile seçilir
- * ({@code city-image}: gerçek, varsayılan; {@code fake}: örnek yapıtlar). Seçilen üretici önbellekli
- * sarmalayıcıyla sarılır; {@code timeportal.cache.enabled=false} ise doğrudan döner.
+ * ({@code city-image}: gerçek, varsayılan; {@code fake}: örnek yapıtlar). {@code fake} önbellekli
+ * sarmalayıcıyla sarılır ({@code timeportal.cache.enabled=false} ise doğrudan). {@code city-image} dış önbellekle
+ * sarılmaz: kendi ilçe başına önbelleği vardır.
  */
 @Configuration
 public class SceneGeneratorConfig {
@@ -24,11 +25,12 @@ public class SceneGeneratorConfig {
 			@Value("${timeportal.generator:city-image}") String choice,
 			@Value("${timeportal.cache.enabled:true}") boolean enabled,
 			@Value("${timeportal.cache.max-entries:500}") int maxEntries) {
-		SceneGenerator delegate = switch (choice) {
-			case "fake" -> fake.getObject();
+		return switch (choice) {
+			case "fake" -> enabled ? new CachingSceneGenerator(fake.getObject(), maxEntries) : fake.getObject();
+			// Gerçek üretici kendi ilçe önbelleğine sahip (TTL, yapıt varlığı, ilçe doğruluğu); dış
+			// hücre+yıl önbelleği onu devre dışı bırakır ve sınırda yanlış ilçeyi paylaştırır.
 			case "city-image" -> real.getObject();
 			default -> throw new IllegalStateException("timeportal.generator must be 'city-image' or 'fake'");
 		};
-		return enabled ? new CachingSceneGenerator(delegate, maxEntries) : delegate;
 	}
 }

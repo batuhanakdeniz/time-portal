@@ -2,13 +2,13 @@ package com.timeportal.depth;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 
 /** Model dosyasını https üzerinden indirir (yönlendirmeler izlenir; Hugging Face CDN'e yönlendirir). */
@@ -16,6 +16,13 @@ public class HttpModelDownloader implements DepthModelStore.Downloader {
 
 	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
 	private static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(15);
+
+	private final long maxBytes;
+
+	/** @param maxBytes indirme bu bayttan fazlasını yazmaz; aşılırsa hata verir */
+	public HttpModelDownloader(long maxBytes) {
+		this.maxBytes = maxBytes;
+	}
 
 	private final HttpClient client = HttpClient.newBuilder()
 		.connectTimeout(CONNECT_TIMEOUT)
@@ -34,12 +41,28 @@ public class HttpModelDownloader implements DepthModelStore.Downloader {
 				if (response.statusCode() / 100 != 2) {
 					throw new IOException("model download returned HTTP " + response.statusCode());
 				}
-				Files.copy(body, target, StandardCopyOption.REPLACE_EXISTING);
+				copyLimited(body, target, maxBytes);
 			}
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("model download interrupted");
+		}
+	}
+
+	/** Akışı en çok {@code maxBytes} bayt olarak dosyaya yazar; fazlası {@link IOException}. */
+	static void copyLimited(InputStream in, Path target, long maxBytes) throws IOException {
+		try (OutputStream out = Files.newOutputStream(target)) {
+			byte[] buf = new byte[1 << 16];
+			long total = 0;
+			int n;
+			while ((n = in.read(buf)) != -1) {
+				total += n;
+				if (total > maxBytes) {
+					throw new IOException("model download exceeds expected size");
+				}
+				out.write(buf, 0, n);
+			}
 		}
 	}
 }

@@ -14,8 +14,8 @@ import javax.imageio.stream.ImageInputStream;
  */
 public final class ImageDecoder {
 
-	/** 64 megapiksel: Mapillary/Commons görselleri bunun çok altındadır. */
-	public static final long MAX_PIXELS = 64_000_000L;
+	/** 24 megapiksel (~96 MB ham RGB). Mapillary (2048 px) ve Commons küçük resimleri (2048 px) bunun çok altındadır. */
+	public static final long MAX_PIXELS = 24_000_000L;
 
 	private ImageDecoder() {
 	}

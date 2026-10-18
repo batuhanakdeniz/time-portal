@@ -119,4 +119,16 @@ class ArtifactStoreTest {
 			assertThat(files.map(p -> p.getFileName().toString())).allMatch(ArtifactStore::isValidName);
 		}
 	}
+
+	@Test
+	void staleTempFilesAreRemovedAtStartup() throws IOException {
+		Files.writeString(dir.resolve("tmp-123.part"), "yarım");
+		String keep = ArtifactStore.digestPrefix(new byte[] {1}) + ".jpg";
+		Files.writeString(dir.resolve(keep), "x");
+
+		new ArtifactStore(dir, 10, 1_000_000);
+
+		assertThat(dir.resolve("tmp-123.part")).doesNotExist();
+		assertThat(dir.resolve(keep)).exists();
+	}
 }

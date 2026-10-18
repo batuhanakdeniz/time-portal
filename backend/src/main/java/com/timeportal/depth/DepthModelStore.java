@@ -24,6 +24,8 @@ public class DepthModelStore {
 	public static final String DEFAULT_URL = "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/"
 			+ "4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx";
 	public static final String DEFAULT_SHA256 = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c";
+	/** Beklenen dosya boyutu (bayt); indirme bunun +%1'inde kesilir. */
+	public static final long EXPECTED_SIZE = 99_060_839L;
 	public static final String FILE_NAME = "depth-anything-v2-small-4472b73.onnx";
 
 	/** URL'den dosyaya indirir; hata durumunda {@link IOException} fırlatır. */

@@ -19,7 +19,7 @@ class RealModelTest {
 	@Test
 	void estimatesRelativeInverseDepthAtImageSize() {
 		Path dir = Path.of(System.getProperty("user.home"), ".cache", "time-portal", "models");
-		try (OnnxDepthEstimator estimator = new OnnxDepthEstimator(new DepthModelStore(dir, new HttpModelDownloader()), 1)) {
+		try (OnnxDepthEstimator estimator = new OnnxDepthEstimator(new DepthModelStore(dir, new HttpModelDownloader(DepthModelStore.EXPECTED_SIZE * 2)), 1)) {
 			BufferedImage img = new BufferedImage(640, 360, BufferedImage.TYPE_INT_RGB);
 			Graphics2D g = img.createGraphics();
 			g.setPaint(new java.awt.GradientPaint(0, 0, new Color(40, 40, 60), 0, 360, new Color(200, 200, 190)));

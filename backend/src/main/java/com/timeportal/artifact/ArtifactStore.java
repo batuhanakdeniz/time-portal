@@ -43,6 +43,25 @@ public class ArtifactStore {
 		this.dir = dir.toAbsolutePath().normalize();
 		this.maxFiles = maxFiles;
 		this.maxBytes = maxBytes;
+		deleteStaleTempFiles();
+	}
+
+	/** Çökmüş bir yazımdan kalan {@code tmp-*.part} dosyalarını siler (başlangıçta bir kez). */
+	private void deleteStaleTempFiles() {
+		if (!Files.isDirectory(dir)) {
+			return;
+		}
+		try (Stream<Path> s = Files.list(dir)) {
+			for (Path p : s.filter(p -> {
+				String n = p.getFileName().toString();
+				return n.startsWith("tmp-") && n.endsWith(".part");
+			}).toList()) {
+				Files.deleteIfExists(p);
+			}
+		}
+		catch (IOException e) {
+			log.warn("Could not clean stale temp files in {}: {}", dir, e.getMessage());
+		}
 	}
 
 	public static boolean isValidName(String name) {

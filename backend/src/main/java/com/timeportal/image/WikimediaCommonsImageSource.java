@@ -159,7 +159,8 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 		}
 		return new Candidate(rank, page.path("index").asInt(Integer.MAX_VALUE),
 				new CityImage(url, pano ? ImageKind.PANORAMA_360 : ImageKind.PHOTO, outW, outH,
-						new Attribution(author, license, licenseUrl.isEmpty() ? null : licenseUrl, source)));
+						new Attribution(author, license, licenseUrl.isEmpty() ? null : licenseUrl, source,
+								Attribution.WIKIMEDIA_COMMONS)));
 	}
 
 	static boolean isAllowedLicense(String license) {

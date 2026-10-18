@@ -81,6 +81,7 @@ class CityImageSceneGeneratorTest {
 		volatile boolean fetchFails;
 		volatile CountDownLatch findGate;
 		volatile String sourceUrl = MAPILLARY_SOURCE;
+		volatile String provider = Attribution.MAPILLARY;
 
 		DistrictLocator locator = (lat, lon) -> {
 			if (lat > 40) {
@@ -117,7 +118,7 @@ class CityImageSceneGeneratorTest {
 					return new FindOutcome(Optional.empty(), false);
 				}
 				return new FindOutcome(Optional.of(new CityImage("https://img.test/" + district.name() + ".jpg", kind, 64, 32,
-						new Attribution("Ali", "CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/", sourceUrl))),
+						new Attribution("Ali", "CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/", sourceUrl, provider))),
 						degraded);
 			}
 		};
@@ -210,6 +211,7 @@ class CityImageSceneGeneratorTest {
 	void photoResultUsesCommonsProviderAndNoPadding() {
 		fakes.kind = ImageKind.PHOTO;
 		fakes.sourceUrl = COMMONS_SOURCE;
+		fakes.provider = Attribution.WIKIMEDIA_COMMONS;
 
 		SceneResult r = generator().generate(istanbul(2026));
 
@@ -273,6 +275,29 @@ class CityImageSceneGeneratorTest {
 		assertThat(fakes.finds).hasValue(1);
 		assertThat(fakes.fetches).hasValue(1);
 		assertThat(fakes.estimates).hasValue(1);
+	}
+
+	@Test
+	void waiterGivesUpAfterTimeoutWhileOwnerStillCompletes() throws Exception {
+		fakes.findGate = new CountDownLatch(1);
+		CityImageSceneGenerator g = new CityImageSceneGenerator(fakes.locator, fakes.finder, fakes.fetcher,
+				new DepthPipeline(fakes.estimator), store, clock, Duration.ofHours(24), Duration.ofMinutes(5), 1000,
+				Duration.ofMillis(200));
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			Future<SceneResult> owner = pool.submit(() -> g.generate(istanbul(2026)));
+			Thread.sleep(100);
+			Future<SceneResult> waiter = pool.submit(() -> g.generate(istanbul(2027)));
+
+			assertThatThrownBy(() -> waiter.get(5, TimeUnit.SECONDS)).hasRootCauseInstanceOf(IllegalStateException.class)
+				.hasRootCauseMessage("timed out waiting for the scene of the same district");
+
+			fakes.findGate.countDown();
+			assertThat(owner.get(10, TimeUnit.SECONDS).kind()).isEqualTo("panorama");
+		}
+		finally {
+			pool.shutdownNow();
+		}
 	}
 
 	@Test

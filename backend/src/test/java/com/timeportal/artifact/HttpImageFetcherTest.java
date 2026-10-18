@@ -192,4 +192,94 @@ class HttpImageFetcherTest {
 		assertThatThrownBy(() -> f.fetch("https://x.test/a.jpg")).isInstanceOf(IOException.class)
 			.hasMessageContaining("timed out");
 	}
+
+	private static HttpImageFetcher strict(java.util.function.Function<URI, HttpImageFetcher.Response> responder,
+			List<String> hosts, List<URI> seen, HttpImageFetcher.Resolver resolver) {
+		return new HttpImageFetcher(uri -> {
+			seen.add(uri);
+			return responder.apply(uri);
+		}, 1 << 20, Duration.ofSeconds(5), hosts, resolver);
+	}
+
+	private static final HttpImageFetcher.Resolver PUBLIC = host -> new java.net.InetAddress[] {
+			java.net.InetAddress.getByAddress(new byte[] {93, (byte) 184, (byte) 216, 34})};
+
+	@Test
+	void rejectsLiteralInternalAddressesAndHostsOutsideTheAllowList() throws IOException {
+		byte[] jpeg = encode("jpg", 8, 8);
+		List<URI> seen = new ArrayList<>();
+		HttpImageFetcher f = strict(u -> ok("image/jpeg", jpeg), List.of("upload.wikimedia.org", "*.fbcdn.net"), seen, PUBLIC);
+		for (String url : new String[] {"https://127.0.0.1/a.jpg", "https://169.254.169.254/latest/meta-data",
+				"https://10.0.0.1/a.jpg", "https://[::1]/a.jpg", "https://evil.example/a.jpg",
+				"https://upload.wikimedia.org.evil.example/a.jpg", "https://fbcdn.net/a.jpg", "https://notfbcdn.net/a.jpg",
+				"https://upload.wikimedia.org:8443/a.jpg"}) {
+			assertThatThrownBy(() -> f.fetch(url)).as(url).isInstanceOf(IOException.class);
+		}
+		assertThat(seen).isEmpty();
+		assertThat(f.fetch("https://upload.wikimedia.org/a.jpg").ext()).isEqualTo("jpg");
+		assertThat(f.fetch("https://scontent.fist7-1.fna.fbcdn.net/m1/v/t6/x.jpg?stp=s2048x1024").ext()).isEqualTo("jpg");
+	}
+
+	@Test
+	void rejectsAllowedHostThatResolvesToInternalAddress() {
+		for (byte[] ip : new byte[][] {{127, 0, 0, 1}, {(byte) 169, (byte) 254, (byte) 169, (byte) 254}, {10, 0, 0, 1},
+				{(byte) 192, (byte) 168, 1, 1}, {0, 0, 0, 0}, {(byte) 224, 0, 0, 1}}) {
+			List<URI> seen = new ArrayList<>();
+			HttpImageFetcher f = strict(u -> ok("image/jpeg", new byte[1]), List.of("127.0.0.1", "cdn.test"), seen,
+					host -> new java.net.InetAddress[] {java.net.InetAddress.getByAddress(ip)});
+			assertThatThrownBy(() -> f.fetch("https://cdn.test/a.jpg")).isInstanceOf(IOException.class)
+				.hasMessageContaining("non-public");
+			assertThat(seen).isEmpty();
+		}
+		HttpImageFetcher ipv6 = strict(u -> ok("image/jpeg", new byte[1]), List.of("cdn.test"), new ArrayList<>(),
+				host -> new java.net.InetAddress[] {java.net.InetAddress.getByName("::1")});
+		assertThatThrownBy(() -> ipv6.fetch("https://cdn.test/a.jpg")).isInstanceOf(IOException.class);
+	}
+
+	@Test
+	void redirectFromAllowedHostToDisallowedOrInternalHostIsRejected() throws IOException {
+		List<URI> seen = new ArrayList<>();
+		HttpImageFetcher toEvil = strict(u -> new HttpImageFetcher.Response(302, "", -1, "https://evil.example/x.jpg",
+				new ByteArrayInputStream(new byte[0])), List.of("cdn.test"), seen, PUBLIC);
+		assertThatThrownBy(() -> toEvil.fetch("https://cdn.test/a.jpg")).isInstanceOf(IOException.class)
+			.hasMessageContaining("not allowed");
+		assertThat(seen).extracting(URI::getHost).containsExactly("cdn.test");
+
+		HttpImageFetcher toMetadata = strict(u -> new HttpImageFetcher.Response(302, "", -1,
+				"https://169.254.169.254/latest", new ByteArrayInputStream(new byte[0])), List.of("cdn.test"),
+				new ArrayList<>(), PUBLIC);
+		assertThatThrownBy(() -> toMetadata.fetch("https://cdn.test/a.jpg")).isInstanceOf(IOException.class);
+	}
+
+	@Test
+	void malformedRedirectLocationIsAnIoException() {
+		HttpImageFetcher f = fetcher(u -> new HttpImageFetcher.Response(302, "", -1, "ht!tp://bad host/\\x",
+				new ByteArrayInputStream(new byte[0])), 1 << 20, new ArrayList<>());
+		assertThatThrownBy(() -> f.fetch("https://x.test/a")).isInstanceOf(IOException.class);
+	}
+
+	@Test
+	void totalTimeBudgetIsCheckedBeforeEachRedirectHop() {
+		HttpImageFetcher f = new HttpImageFetcher(u -> {
+			try {
+				Thread.sleep(120);
+			}
+			catch (InterruptedException e) {
+				throw new IOException(e);
+			}
+			return new HttpImageFetcher.Response(302, "", -1, "/next", new ByteArrayInputStream(new byte[0]));
+		}, 1 << 20, Duration.ofMillis(200));
+		assertThatThrownBy(() -> f.fetch("https://x.test/a")).isInstanceOf(IOException.class)
+			.hasMessageContaining("timed out");
+	}
+
+	@Test
+	void rejectsImagesOver24Megapixels() throws IOException {
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		ImageIO.write(new BufferedImage(5000, 5000, BufferedImage.TYPE_BYTE_GRAY), "png", out);
+		byte[] png = out.toByteArray();
+		HttpImageFetcher f = fetcher(u -> ok("image/png", png), 15 * 1024 * 1024, new ArrayList<>());
+		assertThatThrownBy(() -> f.fetch("https://x.test/a.png")).isInstanceOf(IOException.class)
+			.hasMessageContaining("dimensions");
+	}
 }

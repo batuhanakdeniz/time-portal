@@ -19,7 +19,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import javax.imageio.IIOImage;
@@ -65,11 +67,20 @@ public class CityImageSceneGenerator implements SceneGenerator {
 	private final Duration ttl;
 	private final Duration degradedTtl;
 	private final int maxEntries;
+	private final Duration waitTimeout;
 	private final ConcurrentMap<String, Entry> entries = new ConcurrentHashMap<>();
 
 	public CityImageSceneGenerator(DistrictLocator locator, CityImageFinder finder, ImageFetcher fetcher,
 			DepthPipeline pipeline, ArtifactStore store, Clock clock, Duration ttl, Duration degradedTtl,
 			int maxEntries) {
+		this(locator, finder, fetcher, pipeline, store, clock, ttl, degradedTtl, maxEntries, Duration.ofSeconds(120));
+	}
+
+	/** {@code waitTimeout}: sürmekte olan hesabı bekleyen isteklerin üst süresi; aşılırsa iş FAILED olur. */
+	public CityImageSceneGenerator(DistrictLocator locator, CityImageFinder finder, ImageFetcher fetcher,
+			DepthPipeline pipeline, ArtifactStore store, Clock clock, Duration ttl, Duration degradedTtl,
+			int maxEntries, Duration waitTimeout) {
+		this.waitTimeout = waitTimeout;
 		this.locator = locator;
 		this.finder = finder;
 		this.fetcher = fetcher;
@@ -95,7 +106,7 @@ public class CityImageSceneGenerator implements SceneGenerator {
 			return new Entry();
 		});
 		if (!owner[0]) {
-			return await(entry.future).result();
+			return await(entry.future, waitTimeout).result();
 		}
 		try {
 			Computed computed = compute(district);
@@ -163,8 +174,7 @@ public class CityImageSceneGenerator implements SceneGenerator {
 
 	static SceneResult.Attribution toAttribution(CityImage image) {
 		var a = image.attribution();
-		String provider = a.sourceUrl() != null && a.sourceUrl().contains("mapillary.com") ? "mapillary"
-				: "wikimedia-commons";
+		String provider = a.provider() != null ? a.provider() : "unknown";
 		return new SceneResult.Attribution(a.author(), a.license(), a.licenseUrl(), a.sourceUrl(), provider);
 	}
 
@@ -209,11 +219,11 @@ public class CityImageSceneGenerator implements SceneGenerator {
 		}
 	}
 
-	private static Computed await(CompletableFuture<Computed> future) {
+	private static Computed await(CompletableFuture<Computed> future, Duration timeout) {
 		try {
-			return future.join();
+			return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 		}
-		catch (CompletionException e) {
+		catch (ExecutionException e) {
 			Throwable cause = e.getCause();
 			if (cause instanceof RuntimeException r) {
 				throw r;
@@ -222,6 +232,13 @@ public class CityImageSceneGenerator implements SceneGenerator {
 				throw err;
 			}
 			throw new IllegalStateException(cause);
+		}
+		catch (TimeoutException e) {
+			throw new IllegalStateException("timed out waiting for the scene of the same district");
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("interrupted while waiting for the scene", e);
 		}
 	}
 }

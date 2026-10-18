@@ -255,7 +255,8 @@ public class MapillaryImageSource implements GeoImageSource {
 		String author = "© Mapillary katkıcıları" + (user.isEmpty() ? "" : ", " + user);
 		String id = text(item.path("id"));
 		return new CityImage(text(item.path("thumb_2048_url")), ImageKind.PANORAMA_360, 2048, height,
-				new Attribution(author, LICENSE, LICENSE_URL, "https://www.mapillary.com/app/?pKey=" + id));
+				new Attribution(author, LICENSE, LICENSE_URL, "https://www.mapillary.com/app/?pKey=" + id,
+						Attribution.MAPILLARY));
 	}
 
 	static String cap(String s, int maxChars) {

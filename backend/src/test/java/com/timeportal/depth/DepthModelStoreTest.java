@@ -148,4 +148,14 @@ class DepthModelStoreTest {
 			.endsWith("/onnx/model.onnx");
 		assertThat(DepthModelStore.DEFAULT_SHA256).hasSize(64).matches("[a-f0-9]+");
 	}
+
+	@Test
+	void copyLimitedStopsAtTheByteLimit() throws Exception {
+		Path ok = dir.resolve("ok.bin");
+		HttpModelDownloader.copyLimited(new java.io.ByteArrayInputStream(new byte[100]), ok, 100);
+		assertThat(Files.size(ok)).isEqualTo(100);
+
+		assertThatThrownBy(() -> HttpModelDownloader.copyLimited(new java.io.ByteArrayInputStream(new byte[101]),
+				dir.resolve("big.bin"), 100)).isInstanceOf(IOException.class).hasMessageContaining("exceeds");
+	}
 }

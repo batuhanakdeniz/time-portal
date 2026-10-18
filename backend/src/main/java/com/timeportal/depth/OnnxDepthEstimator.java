@@ -86,7 +86,9 @@ public class OnnxDepthEstimator implements DepthEstimator, AutoCloseable {
 			if (session == null) {
 				var path = store.ensureModel();
 				env = OrtEnvironment.getEnvironment();
-				session = env.createSession(path.toString(), new OrtSession.SessionOptions());
+				try (OrtSession.SessionOptions options = new OrtSession.SessionOptions()) {
+					session = env.createSession(path.toString(), options);
+				}
 				inputName = session.getInputNames().iterator().next();
 			}
 			return session;

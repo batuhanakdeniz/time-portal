@@ -68,13 +68,14 @@ class SceneGeneratorConfigTest {
 
 	@Nested
 	@SpringBootTest(properties = "timeportal.generator=city-image")
-	class CityImageCached {
+	class CityImageNotWrapped {
 		@Autowired
 		SceneGenerator generator;
 
 		@Test
-		void realGeneratorIsStillWrappedByTheCache() {
-			assertThat(generator).isInstanceOf(CachingSceneGenerator.class);
+		void realGeneratorIsNotWrappedByTheOuterCellCache() {
+			// kendi ilçe önbelleği var; hücre+yıl önbelleği TTL/yapıt varlığı/ilçe doğruluğunu bozardı
+			assertThat(generator).isInstanceOf(CityImageSceneGenerator.class);
 		}
 	}
 }
