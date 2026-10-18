@@ -38,8 +38,8 @@ Karar #37 (**1B 2A 3D 4C 5A**): ilçe düzeyi (~970 ilçe), ilçe sınırları d
 
 - **Merkez GitHub:** Issue = görev, PR = onay kapısı, CI = test kapısı. Telefondan da bilgisayardan da aynı yerden yönetilir, kod her durumda aynı depoya gider.
 - **Depo:** `batuhanakdeniz/time-portal`, private.
-- **Yürütücü:** Claude Code routines (bulut). Zamanlı ve/veya GitHub olayıyla tetiklenir. Kurulum #13'te.
-- **Kapılar:** CI yeşil + reviewer ajan + sahibinin birleştirmesi. Ajan `main`'e doğrudan yazmaz.
+- **Yürütücü:** Claude Code routine "time-portal: sıradaki oto issue", her gün 09:00 İstanbul, Mac mini ortamında (Mac kapalıysa çalışmaz). Her çalışmada tek `oto` issue alır ve taslak PR açar (#13).
+- **Kapılar:** CI yeşil + reviewer ajan + sahibinin birleştirmesi. Ajan `main`'e doğrudan yazmaz. `main` koruması kural düzeyinde (karar #13 C: ücretsiz planda private depoda teknik koruma yok).
 - **Korunan yollar:** `.github/`, `.claude/`, `CLAUDE.md` (CODEOWNERS).
 - **Pano:** Claude artifact panosu emekli edildi, tek doğru kaynak GitHub.
 - **Dış girdi:** Ajan yalnızca sahibinin açtığı issue'lardan tetiklenir.
@@ -88,7 +88,7 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 Güncel durum her zaman GitHub'da: `gh issue list --label F1-türkiye-2026`, `gh pr list`.
 
-1. Yapılıyor: #39 (ilçe bulma), #45 (2.5B görüntüleyici).
+1. Bitti: #38 (harita), #39 (ilçe bulma), #45 (2.5B görüntüleyici).
 2. Sonra: #40 (görsel bulma) → #41 (3B üretici) → #42 (API + arayüz).
-3. Sahibi: #44 Mapillary anahtarı, #13 GitHub App ve `main` koruması seçimi.
+3. Sahibi: #44 Mapillary anahtarı.
 4. Sonra Faz 2: #5, #27, #33.
