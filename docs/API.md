@@ -26,7 +26,7 @@ Genel: JSON, UTF-8. Hata gövdesi `{"error": "<mesaj>"}`. Geliştirmede frontend
 İstek:
 
 ```json
-{"year": -44, "latitude": 41.9, "longitude": 12.5}
+{"year": 2026, "latitude": 41.0369, "longitude": 28.985}
 ```
 
 Yanıt `202 Accepted`, `Location: /api/scenes/{id}`:
@@ -35,7 +35,7 @@ Yanıt `202 Accepted`, `Location: /api/scenes/{id}`:
 {
   "id": "5b0c…",
   "status": "PENDING",
-  "request": {"year": -44, "latitude": 41.9, "longitude": 12.5},
+  "request": {"year": 2026, "latitude": 41.0369, "longitude": 28.985},
   "result": null,
   "error": null,
   "createdAt": "2026-10-15T15:30:00Z"
