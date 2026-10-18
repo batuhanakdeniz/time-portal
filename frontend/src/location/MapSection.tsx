@@ -3,7 +3,7 @@ import type { Selection } from './coordinates'
 
 export interface PickerProps {
   value: Selection | null
-  onChange: (v: Selection) => void
+  onChange: (v: Selection | null) => void
 }
 
 type Loader = () => Promise<{ default: ComponentType<PickerProps> }>
