@@ -19,7 +19,7 @@ Not: Görev metnindeki Wikidata sınıfı Q1187811 yanlış çıktı (Berlin vb.
 python3 backend/tools/build_geo.py [--work DIR] [--tolerance 0.0015] [--out YOL]
 ```
 
-Yalnızca Python 3 standart kütüphanesi gerekir; ağ erişimi ister. Ham indirmeler `--work` dizininde önbelleğe alınır (varsayılan: sistem geçici dizini), betik tekrar çalıştırılabilir ve aynı girdiyle aynı çıktıyı verir. Betik özet ve eşleşmeyen ilçelerin listesini yazdırır.
+Yalnızca Python 3 standart kütüphanesi gerekir; ağ erişimi ister. geoBoundaries sınırları sürüme sabitli URL'den (commit `9469f09`) iner. **Wikidata sorgusu canlıdır**: Wikidata değişirse merkez noktaları değişebilir; bire bir aynı çıktı yalnızca `--work` önbelleğiyle (`wikidata-districts.json`) elde edilir. Adaylar sıralanarak seçildiğinden aynı girdiyle çıktı deterministiktir. Ham indirmeler `--work` dizininde önbelleğe alınır (varsayılan: sistem geçici dizini), betik tekrar çalıştırılabilir ve aynı girdiyle aynı çıktıyı verir. Betik özet ve eşleşmeyen ilçelerin listesini yazdırır.
 
 ## İşlem
 
@@ -31,12 +31,12 @@ Yalnızca Python 3 standart kütüphanesi gerekir; ağ erişimi ister. Ham indir
 ## Eşleşme istatistiği (son üretim)
 
 - Toplam ilçe: 973; dosya boyutu ~1,7 MB
-- Wikidata merkezi eşleşen: 923
-- **Eşleşmeyen (merkez = poligon iç noktası): 50** (bunların 15'inde ad eşleşti ama Wikidata noktası poligon dışında kaldı)
+- Wikidata merkezi eşleşen: 927
+- **Eşleşmeyen (merkez = poligon iç noktası): 46** (bunların 11'inde ad eşleşti ama Wikidata noktası poligon dışında kaldı)
 
 ## Dosya biçimi
 
-UTF-8, satır tabanlı; `#` ile başlayan satırlar yorumdur.
+UTF-8, satır tabanlı; `#` ile başlayan satırlar yorumdur (ilk satır ODbL lisans/atıf başlığıdır).
 
 ```
 D<TAB>ad<TAB>il<TAB>enlem<TAB>boylam<TAB>W|I     yeni ilçe (W: Wikidata merkezi, I: iç nokta)

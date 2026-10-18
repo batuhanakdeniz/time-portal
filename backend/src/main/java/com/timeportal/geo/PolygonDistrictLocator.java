@@ -39,10 +39,6 @@ public class PolygonDistrictLocator implements DistrictLocator {
 		this.shapes = parse(source);
 	}
 
-	public static PolygonDistrictLocator fromClasspath() {
-		return new PolygonDistrictLocator();
-	}
-
 	private static Reader open() {
 		InputStream in = PolygonDistrictLocator.class.getResourceAsStream(RESOURCE);
 		if (in == null) {
@@ -62,7 +58,7 @@ public class PolygonDistrictLocator implements DistrictLocator {
 		for (Shape s : shapes) {
 			if (anyContains(s, longitude, latitude)) {
 				// çakışan komşular varsa merkezi daha yakın olanı seç
-				double d = Math.hypot(s.district().longitude() - longitude, s.district().latitude() - latitude);
+				double d = Math.hypot(s.district().centerLon() - longitude, s.district().centerLat() - latitude);
 				if (d < bestCenterDist) {
 					best = s;
 					bestCenterDist = d;
@@ -100,7 +96,10 @@ public class PolygonDistrictLocator implements DistrictLocator {
 		List<double[]> holes = null;
 		try (BufferedReader r = new BufferedReader(source)) {
 			String line;
+			int lineNo = 0;
 			while ((line = r.readLine()) != null) {
+				lineNo++;
+				try {
 				if (line.isEmpty() || line.charAt(0) == '#') {
 					continue;
 				}
@@ -116,7 +115,7 @@ public class PolygonDistrictLocator implements DistrictLocator {
 						out.add(new Shape(district, parts));
 					}
 					String[] f = line.split("\t");
-					district = new District(f[1], f[2], Double.parseDouble(f[3]), Double.parseDouble(f[4]));
+					district = new District(f[2], f[1], Double.parseDouble(f[3]), Double.parseDouble(f[4]));
 					parts = new ArrayList<>();
 				}
 				else if (kind == 'P') {
@@ -127,6 +126,13 @@ public class PolygonDistrictLocator implements DistrictLocator {
 				}
 				else if (kind == 'H') {
 					holes.add(numbers(line));
+				}
+				else {
+					throw new IllegalArgumentException("unknown record type '" + kind + "'");
+				}
+				}
+				catch (RuntimeException e) {
+					throw new IllegalStateException("invalid district data at line " + lineNo + ": " + e.getMessage(), e);
 				}
 			}
 		}

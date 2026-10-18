@@ -19,17 +19,17 @@ public final class Polygon {
 		if (outer.length < 6 || outer.length % 2 != 0) {
 			throw new IllegalArgumentException("outer ring needs at least 3 vertices");
 		}
-		this.outer = outer;
-		this.holes = List.copyOf(holes);
+		this.outer = outer.clone();
+		this.holes = holes.stream().map(double[]::clone).toList();
 		double x0 = Double.MAX_VALUE;
 		double y0 = Double.MAX_VALUE;
 		double x1 = -Double.MAX_VALUE;
 		double y1 = -Double.MAX_VALUE;
-		for (int i = 0; i < outer.length; i += 2) {
-			x0 = Math.min(x0, outer[i]);
-			x1 = Math.max(x1, outer[i]);
-			y0 = Math.min(y0, outer[i + 1]);
-			y1 = Math.max(y1, outer[i + 1]);
+		for (int i = 0; i < this.outer.length; i += 2) {
+			x0 = Math.min(x0, this.outer[i]);
+			x1 = Math.max(x1, this.outer[i]);
+			y0 = Math.min(y0, this.outer[i + 1]);
+			y1 = Math.max(y1, this.outer[i + 1]);
 		}
 		minX = x0;
 		minY = y0;

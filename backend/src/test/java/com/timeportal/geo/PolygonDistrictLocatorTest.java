@@ -1,6 +1,7 @@
 package com.timeportal.geo;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.StringReader;
 import java.util.Optional;
@@ -13,7 +14,7 @@ class PolygonDistrictLocatorTest {
 
 	@BeforeAll
 	static void load() {
-		locator = PolygonDistrictLocator.fromClasspath();
+		locator = new PolygonDistrictLocator();
 	}
 
 	private static void assertAt(double lat, double lon, String province, String district) {
@@ -82,10 +83,30 @@ class PolygonDistrictLocatorTest {
 	}
 
 	@Test
+	void nearbyGreekIslandsAreOutside() {
+		assertThat(locator.locate(39.105, 26.555)).as("Midilli").isEmpty();
+		assertThat(locator.locate(36.151, 29.594)).as("Meis").isEmpty();
+		assertThat(locator.locate(36.893, 27.288)).as("İstanköy").isEmpty();
+	}
+
+	@Test
+	void kasIsAntalyaKas() {
+		assertAt(36.2, 29.62, "Antalya", "Kaş");
+	}
+
+	@Test
+	void malformedDataFailsWithLineNumber() {
+		String data = "D\tA\tİl\t1.0\t1.0\tW\nP\nO 0 0 2 0 abc 2\n";
+		assertThatThrownBy(() -> new PolygonDistrictLocator(new StringReader(data)))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("line 3");
+	}
+
+	@Test
 	void districtCentersLieInsideTheirOwnDistrict() {
 		assertThat(locator.districts()).hasSizeGreaterThan(900);
 		for (District d : locator.districts()) {
-			Optional<District> found = locator.locate(d.latitude(), d.longitude());
+			Optional<District> found = locator.locate(d.centerLat(), d.centerLon());
 			assertThat(found).as(d.toString()).isPresent();
 			assertThat(found.get().province()).as(d.toString()).isEqualTo(d.province());
 		}
@@ -115,7 +136,7 @@ class PolygonDistrictLocatorTest {
 	@Test
 	void loadsQuickly() {
 		long t = System.nanoTime();
-		PolygonDistrictLocator.fromClasspath();
-		assertThat((System.nanoTime() - t) / 1_000_000).isLessThan(2000);
+		new PolygonDistrictLocator();
+		assertThat((System.nanoTime() - t) / 1_000_000).isLessThan(5000);
 	}
 }

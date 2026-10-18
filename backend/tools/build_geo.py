@@ -21,7 +21,11 @@ import tempfile
 import urllib.parse
 import urllib.request
 
-ADM_API = "https://www.geoboundaries.org/api/current/gbOpen/TUR/{level}/"
+# Sürüme sabitlenmiş indirme (geoBoundaries gbOpen, commit 9469f09; API'nin "current" kaydıyla aynı)
+GB_COMMIT = "9469f09"
+GB_URL = ("https://github.com/wmgeolab/geoBoundaries/raw/" + GB_COMMIT +
+          "/releaseData/gbOpen/TUR/{level}/geoBoundaries-TUR-{level}.geojson")
+GB_LICENSE = "Open Data Commons Open Database License 1.0"
 SPARQL_URL = "https://query.wikidata.org/sparql"
 # Q1147395 = "district of Turkey"
 SPARQL = """SELECT ?d ?dLabel ?coord ?pLabel WHERE {
@@ -52,12 +56,9 @@ def fetch(url, dest, headers=None):
 
 
 def load_adm(work, level):
-    meta_path = os.path.join(work, f"{level}-meta.json")
-    fetch(ADM_API.format(level=level), meta_path)
-    meta = json.load(open(meta_path, encoding="utf-8"))
-    path = os.path.join(work, f"{level}.geojson")
-    fetch(meta["gjDownloadURL"], path)
-    return meta, json.load(open(path, encoding="utf-8"))
+    path = os.path.join(work, f"{GB_COMMIT}-{level}.geojson")
+    fetch(GB_URL.format(level=level), path)
+    return json.load(open(path, encoding="utf-8"))
 
 
 def load_wikidata(work):
@@ -65,14 +66,16 @@ def load_wikidata(work):
     if not (os.path.exists(path) and os.path.getsize(path) > 0):
         url = SPARQL_URL + "?" + urllib.parse.urlencode({"query": SPARQL})
         fetch(url, path, {"Accept": "application/sparql-results+json"})
-    rows = {}
-    for b in json.load(open(path, encoding="utf-8"))["results"]["bindings"]:
+    rows = []
+    bindings = json.load(open(path, encoding="utf-8"))["results"]["bindings"]
+    # P131 birden çok olabilir; girdi sırası ne olursa olsun çıktı aynı kalsın diye sırala
+    bindings.sort(key=lambda b: (b["d"]["value"], b.get("pLabel", {}).get("value", "")))
+    for b in bindings:
         m = re.match(r"Point\(([-\d.eE]+) ([-\d.eE]+)\)", b["coord"]["value"])
         if not m or "dLabel" not in b or "pLabel" not in b:
             continue
-        rows[b["d"]["value"]] = (b["dLabel"]["value"], b["pLabel"]["value"],
-                                 float(m.group(2)), float(m.group(1)))
-    return list(rows.values())
+        rows.append((b["dLabel"]["value"], b["pLabel"]["value"], float(m.group(2)), float(m.group(1))))
+    return rows
 
 
 # ---------------------------------------------------------------- geometri
@@ -217,7 +220,7 @@ def clean_name(raw, province):
     m = MERKEZ_RE.match(name)
     if m:
         base = (m.group("base") or "").strip()
-        # 'Gediz Merkez' gibi başka ilin ilçesi olabilecek adlarda tabanı koru
+        # taban il adıysa 'Merkez'; değilse ilçe adıdır ('Gediz Merkez' -> 'Gediz')
         if not base or norm(base) == norm(province):
             return "Merkez"
         return base
@@ -233,8 +236,8 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.work, exist_ok=True)
 
-    meta2, adm2 = load_adm(args.work, "ADM2")
-    _, adm1 = load_adm(args.work, "ADM1")
+    adm2 = load_adm(args.work, "ADM2")
+    adm1 = load_adm(args.work, "ADM1")
     wd = load_wikidata(args.work)
 
     # 1) il poligonları (yalnızca ilçe->il eşlemesi)
@@ -308,7 +311,7 @@ def main():
     matched = unmatched = outside = 0
     unmatched_names = []
     for d in districts:
-        cands = [c for c in wd_candidates(d) if in_polygons(c[1], c[0], d["polys"])]
+        cands = sorted(c for c in wd_candidates(d) if in_polygons(c[1], c[0], d["polys"]))
         if cands:
             d["lat"], d["lon"] = cands[0]
             d["src"] = "W"
@@ -326,7 +329,8 @@ def main():
     # 4) yaz
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
-        f.write(f"# time-portal ilçe verisi; build_geo.py ile üretildi. Biçim için geo/README.md\n")
+        f.write(f"# ODbL 1.0 - (c) OpenStreetMap contributors, geoBoundaries gbOpen TUR ADM2 {GB_COMMIT}; "
+                "merkezler Wikidata CC0. build_geo.py ile üretildi; biçim: geo/README.md\n")
         for d in districts:
             f.write(f'D\t{d["name"]}\t{d["province"]}\t{d["lat"]:.5f}\t{d["lon"]:.5f}\t{d["src"]}\n')
             for rings in d["polys"]:
@@ -336,8 +340,7 @@ def main():
                     f.write(("O " if i == 0 else "H ") + flat + "\n")
 
     size = os.path.getsize(args.out)
-    print(f"kaynak: {meta2['boundaryName']} {meta2['boundaryType']} ({meta2['boundaryLicense']}), "
-          f"{len(adm2['features'])} ilçe")
+    print(f"kaynak: geoBoundaries gbOpen TUR ADM2 {GB_COMMIT} ({GB_LICENSE}), {len(adm2['features'])} ilçe")
     print(f"yazılan ilçe: {len(districts)}; dosya: {size/1e6:.2f} MB; tolerans: {args.tolerance}")
     print(f"Wikidata merkezi eşleşen: {matched}; eşleşmeyen (iç nokta): {unmatched} "
           f"(adı eşleşip poligon dışında kalan: {outside})")

@@ -57,4 +57,12 @@ class PointInPolygonTest {
 		assertThat(p.distanceToBoundary(11, 5)).isEqualTo(1.0);
 		assertThat(p.distanceToBoundary(13, 14)).isEqualTo(5.0);
 	}
+
+	@Test
+	void polygonCopiesItsInputArrays() {
+		double[] ring = square(0, 0, 10, 10);
+		Polygon p = new Polygon(ring, List.of());
+		ring[0] = 100;
+		assertThat(p.contains(1, 1)).isTrue();
+	}
 }
