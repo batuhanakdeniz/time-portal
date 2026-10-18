@@ -117,6 +117,20 @@ class SceneJobServiceTest {
 	}
 
 	@Test
+	void noImageFoundFailsWithTheImageMessageInsteadOfTheGenericOne() {
+		SceneJobService service = new SceneJobService(request -> {
+			throw new NoImageFoundException();
+		}, executor);
+
+		SceneJob created = service.create(REQUEST);
+		executor.runNext();
+
+		SceneJob failed = service.find(created.id()).orElseThrow();
+		assertThat(failed.status()).isEqualTo(SceneStatus.FAILED);
+		assertThat(failed.error()).isEqualTo("no image found for location");
+	}
+
+	@Test
 	void errorThrownByGeneratorAlsoMarksJobFailed() {
 		SceneJobService service = new SceneJobService(request -> {
 			throw new NoClassDefFoundError("adapter");

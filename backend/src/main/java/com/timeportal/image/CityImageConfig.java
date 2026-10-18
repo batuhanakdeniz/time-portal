@@ -34,7 +34,9 @@ public class CityImageConfig {
 		ImageHttp commonsHttp = new JdkImageHttp(HttpClient.Redirect.NORMAL);
 		ChainedCityImageFinder chain = new ChainedCityImageFinder(
 				new MapillaryImageSource(mapillaryHttp, sanitizeToken(token), clock),
-				new WikimediaCommonsImageSource(commonsHttp), provinceCenters, clock, totalTimeout);
+				new WikimediaCommonsImageSource(commonsHttp),
+				// Son adım (il merkezi) ilgisiz konulara (böcek, portre...) karşı konu süzgeçli (#41).
+				new WikimediaCommonsImageSource(commonsHttp, true), provinceCenters, clock, totalTimeout);
 		return new CachingCityImageFinder(chain, clock, mapillaryTtl, commonsTtl, emptyTtl, transientTtl, maxEntries);
 	}
 

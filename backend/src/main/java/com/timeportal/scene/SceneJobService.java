@@ -182,6 +182,7 @@ public class SceneJobService {
 			}
 			SceneResult result = null;
 			boolean failed = false;
+			String failure = GENERIC_FAILURE;
 			try {
 				result = generator.generate(running.request());
 			}
@@ -191,12 +192,20 @@ public class SceneJobService {
 				if (e instanceof InterruptedException) {
 					Thread.currentThread().interrupt();
 				}
-				log.error("Scene generation failed for job {}", id, e);
+				if (e instanceof NoImageFoundException) {
+					// Beklenen durum: mesaj istemciye gider, iç ayrıntı yok.
+					failure = e.getMessage();
+					log.info("No image found for job {}", id);
+				}
+				else {
+					log.error("Scene generation failed for job {}", id, e);
+				}
 			}
 			SceneResult finalResult = result;
 			boolean finalFailed = failed;
+			String finalFailure = failure;
 			jobs.computeIfPresent(id, (key, job) -> finalFailed
-					? job.failed(GENERIC_FAILURE, clock.instant())
+					? job.failed(finalFailure, clock.instant())
 					: job.ready(finalResult, clock.instant()));
 		}
 		finally {

@@ -39,6 +39,7 @@ public class ChainedCityImageFinder implements CityImageFinder {
 
 	private final GeoImageSource mapillary;
 	private final GeoImageSource commons;
+	private final GeoImageSource provinceCommons;
 	private final ProvinceCenters provinceCenters;
 	private final Clock clock;
 	private final Duration totalTimeout;
@@ -50,11 +51,18 @@ public class ChainedCityImageFinder implements CityImageFinder {
 
 	public ChainedCityImageFinder(GeoImageSource mapillary, GeoImageSource commons, ProvinceCenters provinceCenters,
 			Clock clock, Duration totalTimeout) {
+		this(mapillary, commons, commons, provinceCenters, clock, totalTimeout);
+	}
+
+	/** {@code provinceCommons}: il merkezi adımının kaynağı (konu süzgeçli olabilir, #41). */
+	public ChainedCityImageFinder(GeoImageSource mapillary, GeoImageSource commons, GeoImageSource provinceCommons,
+			ProvinceCenters provinceCenters, Clock clock, Duration totalTimeout) {
 		if (totalTimeout.isNegative() || totalTimeout.isZero()) {
 			throw new IllegalArgumentException("totalTimeout must be positive");
 		}
 		this.mapillary = mapillary;
 		this.commons = commons;
+		this.provinceCommons = provinceCommons;
 		this.provinceCenters = provinceCenters;
 		this.clock = clock;
 		this.totalTimeout = totalTimeout;
@@ -85,7 +93,7 @@ public class ChainedCityImageFinder implements CityImageFinder {
 			Optional<District> province = provinceCenters.centerOf(d.province());
 			if (province.isPresent() && GeoMath.haversineMeters(d.centerLat(), d.centerLon(),
 					province.get().centerLat(), province.get().centerLon()) > SAME_POINT_M) {
-				found = run.attempt("Commons province center", commons, province.get().centerLat(),
+				found = run.attempt("Commons province center", provinceCommons, province.get().centerLat(),
 						province.get().centerLon(), FAR_M);
 			}
 		}
