@@ -39,5 +39,5 @@ ya da `./mvnw spring-boot:run -Dspring-boot.run.jvmArguments=--enable-native-acc
 | `timeportal.artifacts-dir` | `./data/artifacts` | indirilen görsel ve derinlik PNG'leri |
 | `timeportal.artifacts.max-files` / `max-bytes` | `2000` / 2 GiB | aşılırsa en eski dosyalar silinir |
 | `timeportal.scene.district-ttl` / `degraded-ttl` | `PT24H` / `PT5M` | ilçe önbelleği süresi (geçici hatalı aramada kısa) |
-| `timeportal.artifacts.allowed-hosts` | `upload.wikimedia.org,*.fbcdn.net` | görsel indirmede izinli ana makineler (`*.` alt alan; yönlendirmelerde de uygulanır). Gerçek Mapillary `thumb_2048_url` ana makinesi `scontent.<kod>.fna.fbcdn.net` |
+| `timeportal.artifacts.allowed-hosts` | `upload.wikimedia.org,thumb.wikimedia.org,*.fbcdn.net` | görsel indirmede izinli ana makineler (`*.` alt alan; yönlendirmelerde de uygulanır). Mapillary `thumb_2048_url`: `scontent.<kod>.fna.fbcdn.net`; Commons `upload.wikimedia.org` küçük resmi `thumb.wikimedia.org`'a yönlendirebilir |
 | `timeportal.scene.wait-timeout` | `PT120S` | aynı ilçeyi bekleyen isteklerin üst süresi (aşılırsa iş `generation failed`) |

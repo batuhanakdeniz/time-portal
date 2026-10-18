@@ -37,7 +37,7 @@ class CityImageSceneConfig {
 
 	@Bean
 	ImageFetcher imageFetcher(
-			@Value("${timeportal.artifacts.allowed-hosts:upload.wikimedia.org,*.fbcdn.net}") List<String> allowedHosts) {
+			@Value("${timeportal.artifacts.allowed-hosts:"+HttpImageFetcher.DEFAULT_ALLOWED_HOSTS+"}") List<String> allowedHosts) {
 		return new HttpImageFetcher(allowedHosts);
 	}
 

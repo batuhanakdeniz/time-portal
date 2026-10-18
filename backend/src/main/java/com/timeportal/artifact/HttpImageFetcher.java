@@ -34,6 +34,12 @@ public class HttpImageFetcher implements ImageFetcher {
 	public static final int MAX_BYTES = 15 * 1024 * 1024;
 	public static final Duration TOTAL_TIMEOUT = Duration.ofSeconds(15);
 	static final int MAX_REDIRECTS = 3;
+	/**
+	 * Varsayılan izin listesi: Commons görselleri {@code upload.wikimedia.org}'da, bu adres küçük
+	 * resimleri {@code thumb.wikimedia.org}'a yönlendirebilir (gerçek denemede görüldü); Mapillary
+	 * görselleri {@code scontent.<kod>.fna.fbcdn.net}'te.
+	 */
+	public static final String DEFAULT_ALLOWED_HOSTS = "upload.wikimedia.org,thumb.wikimedia.org,*.fbcdn.net";
 	static final String USER_AGENT = "time-portal/0.1 (https://github.com/batuhanakdeniz/time-portal)";
 
 	/** Tek bir GET'in yanıtı; gövde okunana kadar açık kalır. */
@@ -156,7 +162,8 @@ public class HttpImageFetcher implements ImageFetcher {
 			throw new IOException("image url port not allowed");
 		}
 		if (!hostAllowed(host)) {
-			throw new IOException("image host not allowed");
+			// Yalnızca ana makine adı (imzalı adres/sorgu dizesi loga girmesin)
+			throw new IOException("image host not allowed: " + host);
 		}
 		for (InetAddress a : resolver.resolve(host)) {
 			if (a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress() || a.isAnyLocalAddress()
