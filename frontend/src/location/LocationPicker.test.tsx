@@ -86,7 +86,7 @@ describe('LocationPicker', () => {
     expect(lat()).toHaveAttribute('aria-invalid', 'true')
     expect(lat()).toHaveAttribute('aria-describedby', alert.id)
     expect(lng()).not.toHaveAttribute('aria-invalid')
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ latitude: expect.any(Number) }))
   })
 
   it('harita kabı adlandırılmış bölge', () => {
@@ -108,6 +108,7 @@ describe('LocationPicker', () => {
   it('harita Türkiye sınırlarıyla açılır, kaydırma genişletilmiş kutuyla sınırlanır', () => {
     render(<LocationPicker value={null} onChange={() => {}} />)
     expect(mocks.mapOptions?.bounds).toEqual(TURKEY_BOUNDS)
+    expect(mocks.mapOptions?.fitBoundsOptions).toEqual({ padding: 16 })
     const max = mocks.mapOptions?.maxBounds as [[number, number], [number, number]]
     expect(max[0][0]).toBeLessThan(TURKEY_BOUNDS[0][0])
     expect(max[0][1]).toBeLessThan(TURKEY_BOUNDS[0][1])
@@ -139,11 +140,40 @@ describe('LocationPicker', () => {
     render(<LocationPicker value={null} onChange={onChange} />)
     fireEvent.change(lat(), { target: { value: '37.98' } })
     fireEvent.change(lng(), { target: { value: '23.73' } })
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenLastCalledWith(null)
     expect(screen.getByRole('alert')).toHaveTextContent(TURKEY_ONLY_MESSAGE)
     fireEvent.change(lng(), { target: { value: '26' } })
     expect(onChange).toHaveBeenLastCalledWith({ latitude: 37.98, longitude: 26 })
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('seçim varken boylam Türkiye dışına yazılırsa onChange(null), metin korunur, mesaj ve alan bağı var', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<LocationPicker value={{ latitude: 39.93, longitude: 32.86 }} onChange={onChange} />)
+    fireEvent.change(lng(), { target: { value: '23.73' } })
+    expect(onChange).toHaveBeenLastCalledWith(null)
+    rerender(<LocationPicker value={null} onChange={onChange} />)
+    expect(lng().value).toBe('23.73')
+    expect(lat().value).toBe('39.93')
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(TURKEY_ONLY_MESSAGE)
+    expect(lng()).toHaveAttribute('aria-invalid', 'true')
+    expect(lng()).toHaveAttribute('aria-describedby', alert.id)
+    expect(lat()).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('aralık hatasında da onChange(null) çağrılır', () => {
+    const onChange = vi.fn()
+    render(<LocationPicker value={{ latitude: 39.93, longitude: 32.86 }} onChange={onChange} />)
+    fireEvent.change(lat(), { target: { value: '95' } })
+    expect(onChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('harita tıklamasında boylam normalize edilip kutu içindeyse onChange çağrılır', () => {
+    const onChange = vi.fn()
+    render(<LocationPicker value={null} onChange={onChange} />)
+    act(() => mocks.handlers.click({ lngLat: { lng: 392.86, lat: 39.93 } }))
+    expect(onChange).toHaveBeenCalledWith({ latitude: 39.93, longitude: 32.86 })
   })
 
   it('aralık dışı değer Türkiye mesajından önce gelir', () => {

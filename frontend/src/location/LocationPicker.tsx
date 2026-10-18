@@ -11,10 +11,10 @@ export const MAP_STYLE_URL = 'https://demotiles.maplibre.org/style.json'
 
 interface Props {
   value: Selection | null
-  onChange: (v: Selection) => void
+  onChange: (v: Selection | null) => void
 }
 
-type FieldError = { field: 'lat' | 'lng' | null; message: string }
+type FieldError = { field: 'lat' | 'lng' | 'both' | null; message: string }
 
 const ERROR_ID = 'location-error'
 
@@ -42,6 +42,8 @@ export function LocationPicker({ value, onChange }: Props) {
   const [lngText, setLngText] = useState(value ? String(value.longitude) : '')
   const [fieldError, setFieldError] = useState<FieldError | null>(null)
   const prevHadValue = useRef(value !== null)
+  // Giriş hatası yüzünden seçimi kendimiz temizlediğimizde yazılan metin silinmesin
+  const skipClear = useRef(false)
   const latTextRef = useRef(latText)
   const lngTextRef = useRef(lngText)
   latTextRef.current = latText
@@ -58,6 +60,7 @@ export function LocationPicker({ value, onChange }: Props) {
       ensureWorkerUrl()
       map = new MapLibreMap({ container: containerRef.current, style: MAP_STYLE_URL,
         bounds: TURKEY_BOUNDS,
+        fitBoundsOptions: { padding: 16 },
         maxBounds: TURKEY_MAX_BOUNDS,
       })
       let styleLoaded = false
@@ -71,7 +74,8 @@ export function LocationPicker({ value, onChange }: Props) {
       map.on('click', (e) => {
         const sel = toSelection(e.lngLat.lat, e.lngLat.lng)
         if (!isInTurkeyBounds(sel.latitude, sel.longitude)) {
-          setFieldError({ field: null, message: TURKEY_ONLY_MESSAGE })
+          // Alanlar tıklamayla değişmediği için varsa alan hatasını ezme
+          setFieldError((prev) => prev ?? { field: null, message: TURKEY_ONLY_MESSAGE })
           return
         }
         setLatText(String(sel.latitude))
@@ -110,15 +114,17 @@ export function LocationPicker({ value, onChange }: Props) {
   const lng = value?.longitude
   useEffect(() => {
     if (lat === undefined || lng === undefined) {
-      if (prevHadValue.current) {
+      if (prevHadValue.current && !skipClear.current) {
         setLatText('')
         setLngText('')
         setFieldError(null)
       }
       prevHadValue.current = false
+      skipClear.current = false
       return
     }
     prevHadValue.current = true
+    skipClear.current = false
     const latSame = latTextRef.current.trim() !== '' && Number(latTextRef.current) === lat
     const lngSame = lngTextRef.current.trim() !== '' && Number(lngTextRef.current) === lng
     if (!latSame) setLatText(String(lat))
@@ -138,16 +144,24 @@ export function LocationPicker({ value, onChange }: Props) {
     }
     const latNum = parseField(nextLat, -90, 90)
     const lngNum = parseField(nextLng, -180, 180)
+    const reject = (err: FieldError) => {
+      setFieldError(err)
+      if (prevHadValue.current) skipClear.current = true
+      onChange(null)
+    }
     if (latNum === null) {
-      setFieldError({ field: 'lat', message: 'Enlem -90 ile 90 arasında bir sayı olmalı.' })
+      reject({ field: 'lat', message: 'Enlem -90 ile 90 arasında bir sayı olmalı.' })
       return
     }
     if (lngNum === null) {
-      setFieldError({ field: 'lng', message: 'Boylam -180 ile 180 arasında bir sayı olmalı.' })
+      reject({ field: 'lng', message: 'Boylam -180 ile 180 arasında bir sayı olmalı.' })
       return
     }
     if (!isInTurkeyBounds(latNum, lngNum)) {
-      setFieldError({ field: null, message: TURKEY_ONLY_MESSAGE })
+      const [[west, south], [east, north]] = TURKEY_BOUNDS
+      const latOut = latNum < south || latNum > north
+      const lngOut = lngNum < west || lngNum > east
+      reject({ field: latOut && lngOut ? 'both' : latOut ? 'lat' : 'lng', message: TURKEY_ONLY_MESSAGE })
       return
     }
     setFieldError(null)
@@ -177,8 +191,8 @@ export function LocationPicker({ value, onChange }: Props) {
             max={90}
             step="any"
             value={latText}
-            aria-invalid={fieldError?.field === 'lat' ? 'true' : undefined}
-            aria-describedby={fieldError?.field === 'lat' ? ERROR_ID : undefined}
+            aria-invalid={(fieldError?.field === 'lat' || fieldError?.field === 'both') ? 'true' : undefined}
+            aria-describedby={(fieldError?.field === 'lat' || fieldError?.field === 'both') ? ERROR_ID : undefined}
             onChange={(e) => handleField('lat', e.target.value)}
           />
         </label>
@@ -190,8 +204,8 @@ export function LocationPicker({ value, onChange }: Props) {
             max={180}
             step="any"
             value={lngText}
-            aria-invalid={fieldError?.field === 'lng' ? 'true' : undefined}
-            aria-describedby={fieldError?.field === 'lng' ? ERROR_ID : undefined}
+            aria-invalid={(fieldError?.field === 'lng' || fieldError?.field === 'both') ? 'true' : undefined}
+            aria-describedby={(fieldError?.field === 'lng' || fieldError?.field === 'both') ? ERROR_ID : undefined}
             onChange={(e) => handleField('lng', e.target.value)}
           />
         </label>
