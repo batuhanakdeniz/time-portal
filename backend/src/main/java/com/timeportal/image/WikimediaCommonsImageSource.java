@@ -140,11 +140,8 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 			author = "Wikimedia Commons";
 		}
 		String licenseUrl = text(meta.path("LicenseUrl").path("value"));
-		if (licenseUrl.isEmpty() && LICENSE_CC0.matcher(license).matches()) {
-			licenseUrl = "https://creativecommons.org/publicdomain/zero/1.0/";
-		}
 		if (!licenseUrl.startsWith(HTTPS)) {
-			licenseUrl = "";
+			licenseUrl = defaultLicenseUrl(license);
 		}
 		return new Candidate(rank, page.path("index").asInt(Integer.MAX_VALUE),
 				new CityImage(url, pano ? ImageKind.PANORAMA_360 : ImageKind.PHOTO, outW, outH,
@@ -156,8 +153,43 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 				|| LICENSE_CC_BY.matcher(license).matches();
 	}
 
-	private static final Pattern TAG = Pattern.compile("<[^>]*>");
-	private static final Pattern UNCLOSED_TAG = Pattern.compile("<[^>]*$");
+	private static final Pattern CC_BY_VERSION = Pattern.compile("^CC[ -]BY(-SA)?[ -](\\d\\.\\d)", Pattern.CASE_INSENSITIVE);
+	/** Temizlemeden önce girdi bu uzunluğa kırpılır (Commons metni kullanıcı düzenlemeli, 2 MB'a varabilir). */
+	static final int MAX_HTML_INPUT_CHARS = 10_000;
+
+	/** Bilinen lisans adları için standart creativecommons.org adresi; bilinmiyorsa boş. */
+	static String defaultLicenseUrl(String license) {
+		if (LICENSE_CC0.matcher(license).matches()) {
+			return "https://creativecommons.org/publicdomain/zero/1.0/";
+		}
+		Matcher m = CC_BY_VERSION.matcher(license);
+		if (m.find()) {
+			return "https://creativecommons.org/licenses/by" + (m.group(1) != null ? "-sa" : "") + "/" + m.group(2) + "/";
+		}
+		return "";
+	}
+
+	/** Tek geçişli etiket silme: {@code <} ile sonraki {@code >} arası (kapanmayan parça dahil) atılır. O(n). */
+	private static String stripTags(String s) {
+		StringBuilder out = new StringBuilder(s.length());
+		int i = 0;
+		while (i < s.length()) {
+			char c = s.charAt(i);
+			if (c == '<') {
+				int end = s.indexOf('>', i);
+				out.append(' ');
+				if (end < 0) {
+					break;
+				}
+				i = end + 1;
+			}
+			else {
+				out.append(c);
+				i++;
+			}
+		}
+		return out.toString();
+	}
 	private static final Pattern NUMERIC_ENTITY = Pattern.compile("&#(x[0-9a-fA-F]{1,6}|\\d{1,7});");
 
 	/**
@@ -165,8 +197,8 @@ public class WikimediaCommonsImageSource implements GeoImageSource {
 	 * kalan {@code <} ve {@code >} karakterlerini at → boşlukları sadeleştir → uzunluğu sınırla.
 	 */
 	static String cleanHtml(String html) {
-		String s = TAG.matcher(html).replaceAll(" ");
-		s = UNCLOSED_TAG.matcher(s).replaceAll(" ");
+		String input = html.length() > MAX_HTML_INPUT_CHARS ? html.substring(0, MAX_HTML_INPUT_CHARS) : html;
+		String s = stripTags(input);
 		s = NUMERIC_ENTITY.matcher(s).replaceAll(m -> Matcher.quoteReplacement(decodeNumeric(m.group(1))));
 		s = s.replace("&nbsp;", " ")
 			.replace("&quot;", "\"")

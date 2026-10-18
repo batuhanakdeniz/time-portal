@@ -109,7 +109,11 @@ public class ChainedCityImageFinder implements CityImageFinder {
 				return Optional.empty();
 			}
 			try {
-				return source.find(lat, lon, radius, deadline);
+				Optional<CityImage> r = source.find(lat, lon, radius, deadline);
+				if (deadline.degraded()) {
+					degraded = true;
+				}
+				return r;
 			}
 			catch (RuntimeException e) {
 				degraded = true;

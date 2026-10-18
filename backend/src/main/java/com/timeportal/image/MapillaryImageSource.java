@@ -98,9 +98,6 @@ public class MapillaryImageSource implements GeoImageSource {
 		tiles.sort(Comparator.comparingDouble(t -> GeoMath.distanceToBoxMeters(latitude, longitude, t)));
 		try {
 			for (double[] t : tiles) {
-				if (!scan.canContinue()) {
-					break;
-				}
 				scanTile(latitude, longitude, t, 0, scan);
 			}
 		}
@@ -108,6 +105,7 @@ public class MapillaryImageSource implements GeoImageSource {
 			if (!scan.hasResult()) {
 				throw e;
 			}
+			deadline.markDegraded();
 			log.warn("Mapillary cell failed, returning the best panorama found so far: {}", e.getMessage());
 		}
 		return Optional.ofNullable(scan.result()).map(MapillaryImageSource::toImage);
@@ -174,7 +172,12 @@ public class MapillaryImageSource implements GeoImageSource {
 	}
 
 	private void scanTile(double lat, double lon, double[] tile, int depth, Scan scan) {
-		if (GeoMath.distanceToBoxMeters(lat, lon, tile) >= scan.pruneDistance() || !scan.canContinue()) {
+		if (GeoMath.distanceToBoxMeters(lat, lon, tile) >= scan.pruneDistance()) {
+			return;
+		}
+		if (!scan.canContinue()) {
+			// Taranması gereken hücre kaldı ama süre/istek sınırı doldu: sonuç kısmi.
+			scan.deadline.markDegraded();
 			return;
 		}
 		JsonNode data;

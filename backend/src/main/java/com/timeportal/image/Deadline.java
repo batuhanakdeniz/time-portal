@@ -7,8 +7,7 @@ import java.time.Instant;
 /** Zincirin toplam süre bütçesi. {@link #none()} süresizdir. */
 public final class Deadline {
 
-	private static final Deadline NONE = new Deadline(null, null);
-
+	private final java.util.concurrent.atomic.AtomicBoolean degraded = new java.util.concurrent.atomic.AtomicBoolean();
 	private final Clock clock;
 	private final Instant at;
 
@@ -18,11 +17,20 @@ public final class Deadline {
 	}
 
 	public static Deadline none() {
-		return NONE;
+		return new Deadline(null, null);
 	}
 
 	public static Deadline after(Clock clock, Duration budget) {
 		return new Deadline(clock, clock.instant().plus(budget));
+	}
+
+	/** Kaynak, aramayı yarıda bıraktığını ya da hatayı yutup kısmi sonuç döndüğünü bildirir. */
+	public void markDegraded() {
+		degraded.set(true);
+	}
+
+	public boolean degraded() {
+		return degraded.get();
 	}
 
 	public boolean expired() {

@@ -143,9 +143,9 @@ class WikimediaCommonsImageSourceTest {
 	@Test
 	void nonHttpsLicenseUrlIsDroppedAndNonHttpsSourceCandidateIsRejected() {
 		CityImage ok = find(page("File:A.jpg", "Turkey", "Ali", DESC, "javascript:alert(1)")).orElseThrow();
-		assertThat(ok.attribution().licenseUrl()).isNull();
+		assertThat(ok.attribution().licenseUrl()).isEqualTo("https://creativecommons.org/licenses/by/4.0/");
 		assertThat(find(page("File:A.jpg", "Turkey", "Ali", DESC, "http://creativecommons.org/x")).orElseThrow()
-			.attribution().licenseUrl()).isNull();
+			.attribution().licenseUrl()).isEqualTo("https://creativecommons.org/licenses/by/4.0/");
 		assertThat(find(page("File:A.jpg", "Turkey", "Ali", DESC, CC)).orElseThrow().attribution().licenseUrl()).isEqualTo(CC);
 
 		assertThat(find(page("File:A.jpg", "Turkey", "Ali", "http://commons.wikimedia.org/wiki/File:A.jpg", CC))).isEmpty();
