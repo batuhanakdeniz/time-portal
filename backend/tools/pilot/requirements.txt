@@ -7,7 +7,7 @@ onnxruntime==1.31.0      # MIT, Depth Anything V2 Small (backend ile aynı sür�
 huggingface-hub>=1.1.6
 pytest>=8
 # Yalnızca SDXL-360 karşılaştırması (sdxl360.py) için:
-diffusers==0.37.1
+diffusers==0.42.0
 torch>=2.6
 transformers>=4.44
 accelerate>=0.31

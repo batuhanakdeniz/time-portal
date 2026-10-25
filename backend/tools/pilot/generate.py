@@ -241,6 +241,7 @@ def main(argv):
     ap.add_argument("--place", action="append")
     ap.add_argument("--bucket", action="append")
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--pairs", nargs="+", metavar="YER:KOVA", help="belirli yer:kova çiftleri")
     ap.add_argument("--variant", default="flux2-klein-base-4b")
     ap.add_argument("--no-lora", action="store_true")
     ap.add_argument("--lora-scale", type=float, default=0.9)
@@ -270,7 +271,9 @@ def main(argv):
     mx.set_cache_limit(int(args.cache_limit_gb * 1e9))
     gen = Generator(args.variant, args.lora_scale, use_lora=not args.no_lora, bake_lora=not args.no_bake,
                     fp16=args.fp16)
-    todo = [(pid, bid) for pid in places for bid in buckets
+    pairs = [tuple(x.split(":")) for x in args.pairs] if args.pairs else \
+        [(pid, bid) for pid in places for bid in buckets]
+    todo = [(pid, bid) for pid, bid in pairs
             if not (args.skip_existing and (place_dir(pid) / bid / args.tag / "meta.json").exists())]
     enc = gen.precompute([prompts.compose(pid, bid, erp_trigger=gen.lora_scale is not None)["prompt"]
                           for pid, bid in todo], args.guidance)

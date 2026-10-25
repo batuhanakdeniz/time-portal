@@ -69,3 +69,18 @@ def test_seam_rank_continuous_is_typical_broken_is_extreme():
     broken = img.copy()
     broken[:, :256] += 40  # sol yarı kaydırılmış: kenarda ve ortada kopukluk
     assert depthmath.seam_rank(broken) >= 0.99
+
+
+def test_wrap_blend_closes_context_dependent_seam():
+    import scene_depth
+
+    w, pad = 256, 32
+    base = np.tile(np.cos(np.linspace(0, 2 * np.pi, w, endpoint=False)), (4, 1))
+    content = np.concatenate([base[:, -pad:], base, base[:, :pad]], axis=1)
+    # göreli derinlik modeli: aynı içerik konuma göre farklı değer alır (yavaş değişen sapma)
+    padded = content + np.linspace(-1, 1, w + 2 * pad)
+    plain = padded[:, pad:pad + w]
+    blended = scene_depth.wrap_blend(padded, pad)
+    assert depthmath.seam_ratio(plain) > depthmath.SEAM_LIMIT
+    assert depthmath.seam_ratio(blended) <= depthmath.SEAM_LIMIT
+    assert np.allclose(blended[:, pad:w - pad], plain[:, pad:w - pad])

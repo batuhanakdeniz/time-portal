@@ -1,0 +1,24 @@
+# Pilot kalite puanları (1–5, ajanın görsel değerlendirmesi, 25.10.2026). yer	kova	etiket	puan	gerekçe
+# Rubrik: 5 = döneme ve yere inandırıcı, anakronizm yok · 4 = küçük kusur · 3 = genel hava doğru, belirgin kusur · 2 = yer ya da dönem yanlış/anakronik · 1 = kullanılamaz
+istanbul-beyoglu	neolitik	klein4b-erp-2k	3	Sazdan çatılı kulübeler, çam ormanı, deniz girintisi; genel Akdeniz kıyısı, Boğaz'a özgü değil
+istanbul-beyoglu	roma	klein4b-erp-2k	2	Bağlar inandırıcı ama karşı kıyı modern beyaz yapılar ve iskele; Bizantion surları yok
+istanbul-beyoglu	osmanli-gec	klein4b-erp-2k	2	Taş/tuğla Pera sokağı ve cumba doğru; klima ünitesi, uzakta otomobil, Galata Kulesi yok
+istanbul-beyoglu	erken-cumhuriyet	klein4b-erp-2k	3	Tramvay rayı, dükkân tenteleri, uzakta kule ve deniz; sokak sonunda modern otomobil
+bursa-merkez	neolitik	klein4b-erp-2k	2	Beşik çatılı taş evler (kerpiç/düz çatı olmalı); Alp tipi sivri dağlar, Uludağ değil
+bursa-merkez	roma	klein4b-erp-2k	2	Zeytinlik ve kiremitli taş evler; çan kuleli kilise anakronik, modern Akdeniz köyü havası
+bursa-merkez	osmanli-gec	klein4b-erp-2k	3	Kubbeli camiler, minareler, ahşap çıkmalı evler, kavaklar doğru; dağlar fazla sivri
+bursa-merkez	erken-cumhuriyet	klein4b-erp-2k	2	Taş evlerin üstünde küçük kubbeler (tuhaf), resmî yapı yok, Alp dağları
+konya-cumra	neolitik	klein4b-erp-2k	4	Bitişik düz damlı kerpiç evler, nehir/sazlık, düz ova, uzakta alçak dağlar; kapılar Çatalhöyük'e aykırı
+konya-cumra	roma	klein4b-erp-2k	3	Kiremitli taş çiftlik, buğday, toprak yol, ova; yere özgü değil ama inandırıcı
+konya-cumra	osmanli-gec	klein4b-erp-2k	2	Kiremitli beşik çatı (Konya ovasında düz dam), sivri kule kilise gibi; Roma sahnesiyle neredeyse aynı yerleşim
+konya-cumra	erken-cumhuriyet	klein4b-erp-2k	3	Kavak dizileri, taş evler, buğday, toprak yol; demiryolu istasyonu yok
+sanliurfa-merkez	neolitik	klein4b-erp-2k	4	Yuvarlak taş duvarlı evler, bozkır, ova; dağlar Urfa için fazla yüksek
+sanliurfa-merkez	roma	klein4b-erp-2k	3	Kale tepesi, sütunlar, havuz, sur; bazı evler modern beyaz kutu
+sanliurfa-merkez	osmanli-gec	klein4b-erp-2k	3	Balıklıgöl benzeri havuzlar, kubbeli camiler, kale; sütunlar yanlış yerde, fıskiye modern
+sanliurfa-merkez	erken-cumhuriyet	klein4b-erp-2k	3	Taş kasaba, kale ve sütunlar, toprak yol; çatılar kiremitli (düz dam olmalı)
+trabzon-merkez	neolitik	klein4b-erp-2k	3	Ormanlık kıyı, çakıl plaj, kulübeler; deniz göl/fiyort gibi
+trabzon-merkez	roma	klein4b-erp-2k	2	Kotor benzeri fiyort limanı, modern tekneler; açık Karadeniz kıyısı değil
+trabzon-merkez	osmanli-gec	klein4b-erp-2k	3	Minare, yelkenliler, taş evler; manzara yine fiyort benzeri
+trabzon-merkez	erken-cumhuriyet	klein4b-erp-2k	3	Buharlı gemi, taş evler, fındık bahçesi benzeri ağaçlar; rıhtımda küçük otomobiller
+istanbul-beyoglu	osmanli-gec	klein-base-1k	3	Kısmi karşılaştırma: tarihî yarımada silueti (kubbe, minare) var, araç yok; gökyüzü aşırı doygun, sahne seyrek
+konya-cumra	neolitik	klein-base-1k	2	Kısmi karşılaştırma: yerleşim çok küçük ve uzakta, sahnenin çoğu boş ova
