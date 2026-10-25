@@ -211,3 +211,105 @@ export function buildDisplacement(depth: ArrayLike<number>, cols: number, rows: 
   }
   return out
 }
+
+/** Derinlik normalizasyonu için kırpma yüzdelikleri: uç %5'lik dilimler (gökyüzü gürültüsü, tek tük parlak pikseller) atılır. */
+export const DEPTH_CLIP_LOW = 5
+export const DEPTH_CLIP_HIGH = 95
+/**
+ * Komşu iki köşe arasındaki en büyük z farkı, hücre genişliği cinsinden (eğim sınırı). 1 = en dik yüzey 45°;
+ * ±15° yaw'da bir köşe çifti ekranda en fazla sin(15°) ≈ 0,26 hücre ek uzunluk kazanır.
+ */
+export const MAX_DEPTH_SLOPE = 1
+
+/**
+ * Derinliği [low, high] yüzdelik aralığına kırpıp [0,255]'e yeniden yayar. Yüzdelikler 256 kutulu histogramdan
+ * gelir. Aralık 1 gri düzeyinden darsa (düz harita) değerler yalnızca [0,255]'e kenetlenir.
+ */
+export function normalizeDepth(depth: ArrayLike<number>, low = DEPTH_CLIP_LOW, high = DEPTH_CLIP_HIGH): Float32Array {
+  const n = depth.length
+  const values = new Float32Array(n)
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < n; i++) {
+    const v = clamp(finite(depth[i] ?? 0), 0, 255)
+    values[i] = v
+    hist[Math.round(v)]++
+  }
+  if (n === 0) return values
+  const percentile = (p: number) => {
+    const target = (clamp(p, 0, 100) / 100) * (n - 1)
+    let seen = 0
+    for (let b = 0; b < 256; b++) {
+      seen += hist[b]
+      if (seen > target) return b
+    }
+    return 255
+  }
+  const lo = percentile(Math.min(low, high))
+  const hi = percentile(Math.max(low, high))
+  if (hi - lo < 1) return values
+  const k = 255 / (hi - lo)
+  for (let i = 0; i < n; i++) values[i] = clamp((values[i] - lo) * k, 0, 255)
+  return values
+}
+
+/**
+ * Eğim sınırı: komşu (yatay/dikey) köşeler arasındaki z farkı en fazla maxStep, çapraz komşularda maxStep·√2 olur.
+ * z'(p) = min_q (z(q) + maxStep·d(p,q)) — iki geçişli pah (chamfer) mesafesiyle aşındırma. Sonuç hiçbir köşeyi
+ * yükseltmez (z' ≤ z), dolayısıyla kenarda 0 olan köşeler 0 kalır. İnce, öne çıkan nesneler (korkuluk çubuğu)
+ * çevrelerindeki arka plan derinliğine iner; büyük nesneler iç bölgede derinliğini korur, sınırlarında ≤ 45° rampa
+ * oluşur. Böylece süreksizlikte doku uzayan "lastik perde" üçgenleri oluşmaz.
+ */
+export function limitDepthSlope(z: ArrayLike<number>, cols: number, rows: number, maxStep: number): Float32Array {
+  const w = cols + 1
+  const h = rows + 1
+  const out = new Float32Array(w * h)
+  for (let i = 0; i < out.length; i++) out[i] = finite(z[i] ?? 0)
+  const s = Math.max(0, finite(maxStep))
+  const d = s * Math.SQRT2
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const idx = j * w + i
+      let v = out[idx]
+      if (i > 0) v = Math.min(v, out[idx - 1] + s)
+      if (j > 0) {
+        v = Math.min(v, out[idx - w] + s)
+        if (i > 0) v = Math.min(v, out[idx - w - 1] + d)
+        if (i < w - 1) v = Math.min(v, out[idx - w + 1] + d)
+      }
+      out[idx] = v
+    }
+  }
+  for (let j = h - 1; j >= 0; j--) {
+    for (let i = w - 1; i >= 0; i--) {
+      const idx = j * w + i
+      let v = out[idx]
+      if (i < w - 1) v = Math.min(v, out[idx + 1] + s)
+      if (j < h - 1) {
+        v = Math.min(v, out[idx + w] + s)
+        if (i < w - 1) v = Math.min(v, out[idx + w + 1] + d)
+        if (i > 0) v = Math.min(v, out[idx + w - 1] + d)
+      }
+      out[idx] = v
+    }
+  }
+  return out
+}
+
+/**
+ * Görüntüleyicinin kullandığı tam hat: 5–95 yüzdelik normalizasyonu → kenar sönümlemeli itme → eğim sınırı.
+ * aspect: düzlemin en/boy oranı (düzlem 2·aspect × 2). Eğim sınırı hücre boyuna göre hesaplanır, böylece
+ * ızgara çözünürlüğü ve görsel oranı ne olursa olsun bir köşe komşusundan en fazla ~1 hücre öne çıkabilir.
+ */
+export function buildDepthOffsets(
+  depth: ArrayLike<number>,
+  cols: number,
+  rows: number,
+  aspect: number,
+  scale = DEPTH_SCALE,
+  slope = MAX_DEPTH_SLOPE,
+): Float32Array {
+  const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 1.5
+  const cell = Math.min((2 * a) / Math.max(cols, 1), 2 / Math.max(rows, 1))
+  const z = buildDisplacement(normalizeDepth(depth), cols, rows, scale)
+  return limitDepthSlope(z, cols, rows, slope * cell)
+}
