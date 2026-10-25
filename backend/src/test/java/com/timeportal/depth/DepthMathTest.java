@@ -114,6 +114,197 @@ class DepthMathTest {
 		assertThat(DepthMath.normalizeToGray(map(1, 1, Float.NaN))).containsExactly((byte) 0);
 	}
 
+	/** 0..100 (101 değer) tek satır: 1. yüzdelik = 1, 99. yüzdelik = 99 tam çıkar. */
+	private static DepthMap ramp101() {
+		float[] v = new float[101];
+		for (int i = 0; i < v.length; i++) {
+			v[i] = i;
+		}
+		return new DepthMap(101, 1, v);
+	}
+
+	private static int gray(byte[] g, int i) {
+		return g[i] & 0xFF;
+	}
+
+	@Test
+	void legacyNormalizeEqualsRobustWithMinMaxParameters() {
+		DepthMap m = map(3, 2, 5f, -2f, 9f, Float.NaN, 0f, 1.5f);
+		assertThat(DepthMath.normalizeToGray(m)).containsExactly(DepthMath.normalizeToGray(m, 0, 0, 100, 1));
+	}
+
+	@Test
+	void percentileInterpolatesLinearlyBetweenRanks() {
+		float[] sorted = {0f, 10f, 20f, 30f};
+		assertThat(DepthMath.percentile(sorted, 0)).isEqualTo(0);
+		assertThat(DepthMath.percentile(sorted, 100)).isEqualTo(30);
+		assertThat(DepthMath.percentile(sorted, 50)).isCloseTo(15, within(1e-9));
+		assertThat(DepthMath.percentile(new float[] {7f}, 99)).isEqualTo(7);
+	}
+
+	@Test
+	void percentileClipIgnoresOutliersAndClampsToBounds() {
+		DepthMap m = ramp101();
+		m.values()[100] = 10_000f; // tek uç değer (ör. kameranın dibindeki zemin)
+		byte[] g = DepthMath.normalizeToGray(m, 0, 1, 99, 1);
+		// sınırlar: 1 → 0, 99 → 255; altı ve üstü kırpılır
+		assertThat(gray(g, 0)).isZero();
+		assertThat(gray(g, 1)).isZero();
+		assertThat(gray(g, 99)).isEqualTo(255);
+		assertThat(gray(g, 100)).isEqualTo(255);
+		assertThat(gray(g, 50)).isEqualTo((int) Math.round(49.0 / 98 * 255));
+		// min-max'ta uç değer ölçeği yutar: orta değer neredeyse siyah
+		assertThat(gray(DepthMath.normalizeToGray(m, 0, 0, 100, 1), 50)).isLessThan(3);
+	}
+
+	@Test
+	void gammaBelowOneLiftsMidTonesAndKeepsEnds() {
+		DepthMap m = ramp101();
+		byte[] linear = DepthMath.normalizeToGray(m, 0, 0, 100, 1);
+		byte[] lifted = DepthMath.normalizeToGray(m, 0, 0, 100, 0.5);
+		assertThat(gray(linear, 25)).isEqualTo(64);
+		assertThat(gray(lifted, 25)).isEqualTo(128); // 0.25^0.5 = 0.5
+		assertThat(gray(lifted, 0)).isZero();
+		assertThat(gray(lifted, 100)).isEqualTo(255);
+		for (int i = 1; i < 100; i++) {
+			assertThat(gray(lifted, i)).isGreaterThanOrEqualTo(gray(linear, i));
+			assertThat(gray(lifted, i)).isGreaterThanOrEqualTo(gray(lifted, i - 1));
+		}
+	}
+
+	@Test
+	void bottomStripIsExcludedFromStatisticsButStillWritten() {
+		// 4x10: üst 8 satır 0..7 (satır başına sabit), alt 2 satır (%20) çok yakın zemin
+		int w = 4;
+		int h = 10;
+		float[] v = new float[w * h];
+		for (int y = 0; y < h; y++) {
+			for (int x = 0; x < w; x++) {
+				v[y * w + x] = y < 8 ? y : 1000f + y;
+			}
+		}
+		DepthMap m = new DepthMap(w, h, v);
+		byte[] excluded = DepthMath.normalizeToGray(m, 0.2, 0, 100, 1);
+		assertThat(gray(excluded, 0)).isZero();
+		assertThat(gray(excluded, 7 * w)).isEqualTo(255); // üst bölgenin en yakını tam beyaz
+		assertThat(gray(excluded, 4 * w)).isEqualTo((int) Math.round(4.0 / 7 * 255));
+		assertThat(gray(excluded, 8 * w)).isEqualTo(255); // zemin kırpılır, yine yazılır
+		assertThat(gray(excluded, 9 * w + 3)).isEqualTo(255);
+		// hariç tutmadan: binalar bandı koyuya sıkışır
+		byte[] all = DepthMath.normalizeToGray(m, 0, 0, 100, 1);
+		assertThat(gray(all, 7 * w)).isLessThan(3);
+	}
+
+	@Test
+	void stripCoveringWholeMapFallsBackToAllRows() {
+		// 1 satır, şerit 0.9 → yuvarlanınca tüm satırlar; istatistik tüm haritaya düşer
+		byte[] g = DepthMath.normalizeToGray(map(3, 1, 0f, 5f, 10f), 0.9, 0, 100, 1);
+		assertThat(g).containsExactly((byte) 0, (byte) 128, (byte) 255);
+	}
+
+	@Test
+	void flatStatisticsRegionFallsBackToFullMinMax() {
+		// üst satırlar düz (yüzdelikler çakışır) → tüm haritanın min-max'ı kullanılır
+		DepthMap m = map(2, 4, 3f, 3f, 3f, 3f, 3f, 3f, 5f, 7f);
+		byte[] g = DepthMath.normalizeToGray(m, 0.25, 1, 99, 1);
+		assertThat(gray(g, 0)).isZero();
+		assertThat(gray(g, 6)).isEqualTo(128);
+		assertThat(gray(g, 7)).isEqualTo(255);
+		// tamamen düz → 128, sonlu olmayan → 0
+		assertThat(DepthMath.normalizeToGray(map(3, 1, 2f, 2f, Float.NaN), 0, 1, 99, 0.7))
+			.containsExactly((byte) 128, (byte) 128, (byte) 0);
+	}
+
+	@Test
+	void nonFiniteValuesBecomeZeroAndDoNotAffectStatistics() {
+		DepthMap m = map(6, 1, Float.NaN, 0f, Float.POSITIVE_INFINITY, 5f, Float.NEGATIVE_INFINITY, 10f);
+		byte[] g = DepthMath.normalizeToGray(m, 0, 0, 100, 0.7);
+		assertThat(gray(g, 0)).isZero();
+		assertThat(gray(g, 2)).isZero();
+		assertThat(gray(g, 4)).isZero();
+		assertThat(gray(g, 1)).isZero();
+		assertThat(gray(g, 5)).isEqualTo(255);
+		assertThat(gray(g, 3)).isEqualTo((int) Math.round(Math.pow(0.5, 0.7) * 255));
+		// stat bölgesi tamamen sonlu değil → tüm haritaya düşülür
+		byte[] fallback = DepthMath.normalizeToGray(map(2, 2, Float.NaN, Float.NaN, 1f, 3f), 0.5, 0, 100, 1);
+		assertThat(fallback).containsExactly((byte) 0, (byte) 0, (byte) 0, (byte) 255);
+		assertThat(DepthMath.normalizeToGray(map(2, 1, Float.NaN, Float.NaN), 0.15, 1, 99, 0.7))
+			.containsExactly((byte) 0, (byte) 0);
+	}
+
+	@Test
+	void robustNormalizeIsMonotonicAndSpansFullScale() {
+		java.util.Random random = new java.util.Random(66);
+		int w = 64;
+		int h = 32;
+		float[] v = new float[w * h];
+		for (int i = 0; i < v.length; i++) {
+			v[i] = (float) (random.nextGaussian() * 50 + (i / w >= 27 ? 5000 : 0));
+		}
+		DepthMap m = new DepthMap(w, h, v);
+		byte[] g = DepthMath.normalizeToGray(m, 0.15, 1, 99, 0.7);
+		int min = 255;
+		int max = 0;
+		for (int i = 0; i < g.length; i++) {
+			min = Math.min(min, gray(g, i));
+			max = Math.max(max, gray(g, i));
+			for (int j = 0; j < g.length; j += 97) {
+				if (v[i] > v[j]) {
+					assertThat(gray(g, i)).isGreaterThanOrEqualTo(gray(g, j));
+				}
+			}
+		}
+		assertThat(min).isZero();
+		assertThat(max).isEqualTo(255);
+	}
+
+	@Test
+	void robustNormalizeRejectsInvalidParameters() {
+		DepthMap m = ramp101();
+		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, -0.1, 1, 99, 1)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 1, 1, 99, 1)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 0, 50, 50, 1)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 0, -1, 99, 1)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 0, 1, 101, 1)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 0, 1, 99, 0)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 0, 1, 99, Double.NaN)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new DepthNormalization(0.15, 99, 1, 0.7)).isInstanceOf(IllegalArgumentException.class);
+		// mesajlar tam özellik adını taşır
+		assertThatThrownBy(() -> new DepthNormalization(1.5, 1, 99, 0.7))
+			.hasMessageStartingWith("timeportal.depth.normalize.exclude-bottom ");
+		assertThatThrownBy(() -> new DepthNormalization(0.15, 99, 1, 0.7))
+			.hasMessageStartingWith("timeportal.depth.normalize.low-pct and high-pct ");
+		assertThatThrownBy(() -> new DepthNormalization(0.15, 1, 99, -1))
+			.hasMessageStartingWith("timeportal.depth.normalize.gamma ");
+	}
+
+	@Test
+	void cacheKeyIsStableAndChangesWithEveryParameterThatAffectsOutput() {
+		DepthNormalization base = new DepthNormalization(0.15, 1, 99, 0.7);
+		assertThat(base.cacheKey(true)).isEqualTo(new DepthNormalization(0.15, 1, 99, 0.7).cacheKey(true));
+		assertThat(base.cacheKey(true)).isNotEqualTo(base.cacheKey(false));
+		java.util.List<DepthNormalization> variants = java.util.List.of(new DepthNormalization(0.2, 1, 99, 0.7),
+				new DepthNormalization(0.15, 2, 99, 0.7), new DepthNormalization(0.15, 1, 98, 0.7),
+				new DepthNormalization(0.15, 1, 99, 0.6));
+		for (DepthNormalization v : variants) {
+			assertThat(v.cacheKey(true)).as(v.toString()).isNotEqualTo(base.cacheKey(true));
+		}
+		// fotoğrafta alt şerit uygulanmaz: anahtara girmez, diğerleri girer
+		assertThat(variants.get(0).cacheKey(false)).isEqualTo(base.cacheKey(false));
+		for (DepthNormalization v : variants.subList(1, variants.size())) {
+			assertThat(v.cacheKey(false)).as(v.toString()).isNotEqualTo(base.cacheKey(false));
+		}
+	}
+
+	@Test
+	void defaultNormalizationMatchesMeasuredChoice() {
+		DepthNormalization n = DepthNormalization.defaults();
+		assertThat(n.panoramaExcludeBottom()).isEqualTo(0.15);
+		assertThat(n.lowPercentile()).isEqualTo(1);
+		assertThat(n.highPercentile()).isEqualTo(99);
+		assertThat(n.gamma()).isEqualTo(0.7);
+	}
+
 	@Test
 	void smoothPolesMakesExtremeRowsConstantAndLeavesMiddleAlone() {
 		int w = 4;

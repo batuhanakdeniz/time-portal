@@ -214,7 +214,7 @@ public class CityImageSceneGenerator implements SceneGenerator {
 		stages.onStage(SceneStage.DEPTH);
 		byte[] depthPng = pipeline.depthPng(image, panorama);
 		stages.onStage(SceneStage.PACKAGING);
-		String depthName = store.saveDepth(imageName, depthPng);
+		String depthName = store.saveDepth(imageName, pipeline.normalization().cacheKey(panorama), depthPng);
 		long t3 = System.nanoTime();
 		log.info("Scene for {}/{}: kind={} {}x{} search={}ms download={}ms depth={}ms", district.province(),
 				district.name(), panorama ? "panorama" : "photo", image.getWidth(), image.getHeight(),

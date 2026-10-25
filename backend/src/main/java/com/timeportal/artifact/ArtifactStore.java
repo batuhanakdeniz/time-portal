@@ -2,6 +2,7 @@ package com.timeportal.artifact;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,8 +19,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Üretilen görsel ve derinlik PNG'lerinin disk deposu. Dosya adı içerik özetidir:
- * {@code <sha256 ilk 16 hex>.jpg|png} ve {@code <aynı>-depth.png}. Adlar yalnızca {@link #NAME}
+ * Üretilen görsel ve derinlik PNG'lerinin disk deposu. Görsel adı içerik özetidir:
+ * {@code <sha256 ilk 16 hex>.jpg|png}; derinlik adı görsel özeti ve isteğe bağlı bir varyant
+ * anahtarından (ör. normalizasyon parametreleri) türetilir: {@code <16 hex>-depth.png}. Adlar yalnızca {@link #NAME}
  * kalıbına uyarsa çözülür, böylece yol gezintisi (path traversal) imkânsızdır. Yazım atomiktir
  * (geçici dosya + taşıma). Disk sınırı: dosya sayısı ve toplam bayt aşılırsa en eski dosyalar
  * (son değiştirilme zamanına göre) silinir.
@@ -85,14 +87,38 @@ public class ArtifactStore {
 		return name;
 	}
 
-	/** Bir görsele ait derinlik PNG'sini {@code <özet>-depth.png} adıyla saklar; adı döner. */
+	/** Bir görsele ait derinlik PNG'sini {@code <görsel özeti>-depth.png} adıyla saklar; adı döner. */
 	public String saveDepth(String imageName, byte[] png) {
+		String name = depthName(imageName, null);
+		save(name, png);
+		return name;
+	}
+
+	/**
+	 * Derinlik PNG'sini, görsel özeti ve {@code variantKey}'den türetilen adla saklar; adı döner. Yapıtlar
+	 * uzun süreli (immutable) önbelleğe alındığından, aynı görselin farklı ayarlarla üretilen derinliği
+	 * farklı bir URL almalıdır (#66).
+	 */
+	public String saveDepth(String imageName, String variantKey, byte[] png) {
+		String name = depthName(imageName, variantKey);
+		save(name, png);
+		return name;
+	}
+
+	/**
+	 * Derinlik dosya adı: anahtar yoksa {@code <görsel özeti>-depth.png}; varsa
+	 * {@code sha256(<görsel özeti> + "|" + anahtar)} ilk 16 hex + {@code -depth.png}. Ad kalıbı
+	 * ({@link #NAME}) değişmez.
+	 */
+	public static String depthName(String imageName, String variantKey) {
 		if (!isValidName(imageName)) {
 			throw new IllegalArgumentException("invalid image name");
 		}
-		String name = imageName.substring(0, 16) + "-depth.png";
-		save(name, png);
-		return name;
+		String imageDigest = imageName.substring(0, 16);
+		if (variantKey == null) {
+			return imageDigest + "-depth.png";
+		}
+		return digestPrefix((imageDigest + "|" + variantKey).getBytes(StandardCharsets.UTF_8)) + "-depth.png";
 	}
 
 	public boolean exists(String name) {

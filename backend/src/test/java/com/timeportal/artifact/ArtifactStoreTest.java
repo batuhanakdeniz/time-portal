@@ -69,6 +69,34 @@ class ArtifactStoreTest {
 	}
 
 	@Test
+	void depthNameChangesWithVariantKeyButImageNameDoesNot() throws IOException {
+		ArtifactStore artifacts = new ArtifactStore(dir, 10, 1_000_000);
+		byte[] image = {5, 6, 7};
+		String name = artifacts.saveImage(image, "jpg");
+
+		String a = artifacts.saveDepth(name, "v1|panorama|gamma=0.7", new byte[] {1});
+		String sameAgain = artifacts.saveDepth(name, "v1|panorama|gamma=0.7", new byte[] {1});
+		String b = artifacts.saveDepth(name, "v1|panorama|gamma=0.5", new byte[] {2});
+
+		assertThat(sameAgain).isEqualTo(a);
+		assertThat(b).isNotEqualTo(a);
+		assertThat(a).isNotEqualTo(name.substring(0, 16) + "-depth.png");
+		assertThat(ArtifactStore.isValidName(a)).isTrue();
+		assertThat(ArtifactStore.isValidName(b)).isTrue();
+		assertThat(a).isEqualTo(ArtifactStore.digestPrefix(
+				(name.substring(0, 16) + "|v1|panorama|gamma=0.7").getBytes(java.nio.charset.StandardCharsets.UTF_8))
+				+ "-depth.png");
+		// görsel adı anahtardan bağımsız; iki derinlik de ayrı dosya olarak çözülür
+		assertThat(artifacts.saveImage(image, "jpg")).isEqualTo(name);
+		assertThat(Files.readAllBytes(artifacts.resolve(a).orElseThrow())).containsExactly(1);
+		assertThat(Files.readAllBytes(artifacts.resolve(b).orElseThrow())).containsExactly(2);
+		// anahtarsız ad eskisi gibi
+		assertThat(ArtifactStore.depthName(name, null)).isEqualTo(name.substring(0, 16) + "-depth.png");
+		assertThatThrownBy(() -> artifacts.saveDepth("../x", "k", new byte[1]))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
 	void removesOldestFilesWhenFileCountLimitIsExceeded() throws IOException {
 		ArtifactStore artifacts = new ArtifactStore(dir, 3, 1_000_000);
 		String[] names = new String[5];

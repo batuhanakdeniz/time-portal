@@ -36,6 +36,9 @@ ya da `./mvnw spring-boot:run -Dspring-boot.run.jvmArguments=--enable-native-acc
 | `timeportal.generator` | `city-image` | `city-image` gerçek üretici, `fake` örnek yapıtlar (testlerde `fake`) |
 | `timeportal.depth.model-dir` | `${user.home}/.cache/time-portal/models` | model önbelleği |
 | `timeportal.depth.max-concurrent` | `1` | eşzamanlı çıkarım sınırı (CPU) |
+| `timeportal.depth.normalize.exclude-bottom` | `0.15` | panoramada griye çevirme istatistiğinden hariç tutulan alt şerit (yükseklik oranı, [0, 1)); kameranın altındaki zemin ölçeği yutmasın diye. Fotoğrafta uygulanmaz; şerit yine çıktıya yazılır (#66) |
+| `timeportal.depth.normalize.low-pct` / `high-pct` | `1` / `99` | yüzdelik kırpma: bu yüzdelikler 0 ve 255 olur, dışı kırpılır (her iki modda) |
+| `timeportal.depth.normalize.gamma` | `0.7` | ton eğrisi üssü; 1 doğrusal, 1'den küçük orta tonları (binaları) açar (her iki modda) |
 | `timeportal.artifacts-dir` | `./data/artifacts` | indirilen görsel ve derinlik PNG'leri |
 | `timeportal.artifacts.max-files` / `max-bytes` | `2000` / 2 GiB | aşılırsa en eski dosyalar silinir |
 | `timeportal.scene.district-ttl` / `degraded-ttl` | `PT24H` / `PT5M` | ilçe önbelleği süresi (geçici hatalı aramada kısa) |

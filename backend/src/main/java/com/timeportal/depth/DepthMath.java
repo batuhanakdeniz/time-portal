@@ -128,28 +128,106 @@ public final class DepthMath {
 
 	/**
 	 * Min-max ile 0-255'e normalize eder; en büyük değer (en yakın) 255 = açık. Düz haritada (min==max)
-	 * 128 döner; sonlu olmayan değerler 0 olur.
+	 * 128 döner; sonlu olmayan değerler 0 olur. {@code normalizeToGray(map, 0, 0, 100, 1)} ile aynıdır.
 	 */
 	public static byte[] normalizeToGray(DepthMap map) {
-		float min = Float.POSITIVE_INFINITY;
-		float max = Float.NEGATIVE_INFINITY;
-		for (float v : map.values()) {
-			if (Float.isFinite(v)) {
-				min = Math.min(min, v);
-				max = Math.max(max, v);
-			}
+		return normalizeToGray(map, 0, 0, 100, 1);
+	}
+
+	/**
+	 * Sağlam ölçekli gri normalizasyon (#66). Ölçek sınırları yalnızca üstteki satırlardan (alttan
+	 * {@code excludeBottom} oranı kadar satır hariç) ve sonlu değerlerden, {@code lowPercentile} ve
+	 * {@code highPercentile} yüzdelikleri (doğrusal ara değer) olarak hesaplanır. Her piksel bu aralığa
+	 * kırpılır, [0, 1]'e taşınır, {@code gamma} üssü uygulanır ve 0-255'e yuvarlanır: açık = yakın.
+	 * Hariç tutulan satırlar da çıktıya yazılır (üst sınırın üstü 255 olur).
+	 *
+	 * <p>Yüzdelikler çakışırsa (neredeyse düz bölge) tüm sonlu değerlerin min-max'ına düşülür; o da
+	 * düzse 128 döner. Sonlu olmayan değerler 0 olur; hiç sonlu değer yoksa hepsi 0.
+	 */
+	public static byte[] normalizeToGray(DepthMap map, double excludeBottom, double lowPercentile,
+			double highPercentile, double gamma) {
+		checkNormalization(excludeBottom, lowPercentile, highPercentile, gamma);
+		float[] values = map.values();
+		int statRows = map.height() - (int) Math.round(map.height() * excludeBottom);
+		if (statRows < 1) {
+			statRows = map.height();
 		}
-		byte[] out = new byte[map.values().length];
-		if (!(max > min)) {
-			Arrays.fill(out, (byte) (Float.isFinite(max) ? 128 : 0));
+		float[] stats = finiteSorted(values, statRows * map.width());
+		if (stats.length == 0) {
+			stats = finiteSorted(values, values.length);
+		}
+		if (stats.length == 0) {
+			return new byte[values.length];
+		}
+		double lo = percentile(stats, lowPercentile);
+		double hi = percentile(stats, highPercentile);
+		if (!(hi > lo)) {
+			float[] all = finiteSorted(values, values.length);
+			lo = all[0];
+			hi = all[all.length - 1];
+		}
+		byte[] out = new byte[values.length];
+		if (!(hi > lo)) {
+			Arrays.fill(out, (byte) 128);
+			for (int i = 0; i < out.length; i++) {
+				if (!Float.isFinite(values[i])) {
+					out[i] = 0;
+				}
+			}
 			return out;
 		}
-		float range = max - min;
+		double range = hi - lo;
 		for (int i = 0; i < out.length; i++) {
-			float v = map.values()[i];
-			out[i] = Float.isFinite(v) ? (byte) Math.round((v - min) / range * 255f) : 0;
+			float v = values[i];
+			if (!Float.isFinite(v)) {
+				continue;
+			}
+			double t = Math.min(1, Math.max(0, (v - lo) / range));
+			if (gamma != 1) {
+				t = Math.pow(t, gamma);
+			}
+			out[i] = (byte) Math.round(t * 255);
 		}
 		return out;
+	}
+
+	/** Normalizasyon parametrelerini doğrular. */
+	static void checkNormalization(double excludeBottom, double lowPercentile, double highPercentile,
+			double gamma) {
+		if (!(excludeBottom >= 0 && excludeBottom < 1)) {
+			throw new IllegalArgumentException("timeportal.depth.normalize.exclude-bottom must be in [0, 1)");
+		}
+		if (!(lowPercentile >= 0 && lowPercentile < highPercentile && highPercentile <= 100)) {
+			throw new IllegalArgumentException("timeportal.depth.normalize.low-pct and high-pct must satisfy 0 <= low-pct < high-pct <= 100");
+		}
+		if (!(gamma > 0 && Double.isFinite(gamma))) {
+			throw new IllegalArgumentException("timeportal.depth.normalize.gamma must be positive and finite");
+		}
+	}
+
+	/** İlk {@code count} değerin sonlu olanları, sıralı. */
+	private static float[] finiteSorted(float[] values, int count) {
+		float[] out = new float[count];
+		int n = 0;
+		for (int i = 0; i < count; i++) {
+			if (Float.isFinite(values[i])) {
+				out[n++] = values[i];
+			}
+		}
+		out = Arrays.copyOf(out, n);
+		Arrays.sort(out);
+		return out;
+	}
+
+	/** Sıralı dizide {@code p} yüzdeliği (0-100), komşu sıralar arasında doğrusal ara değerle. */
+	static double percentile(float[] sorted, double p) {
+		double pos = p / 100 * (sorted.length - 1);
+		int i = (int) Math.floor(pos);
+		if (i >= sorted.length - 1) {
+			return sorted[sorted.length - 1];
+		}
+		double f = pos - i;
+		return sorted[i] + (sorted[i + 1] - (double) sorted[i]) * f;
 	}
 
 	/**

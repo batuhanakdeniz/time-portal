@@ -9,6 +9,7 @@ import com.timeportal.artifact.ImageDecoder;
 import com.timeportal.artifact.ImageFetcher;
 import com.timeportal.depth.DepthEstimator;
 import com.timeportal.depth.DepthMap;
+import com.timeportal.depth.DepthNormalization;
 import com.timeportal.depth.DepthPipeline;
 import com.timeportal.geo.District;
 import com.timeportal.geo.DistrictLocator;
@@ -195,7 +196,9 @@ class CityImageSceneGeneratorTest {
 				"https://creativecommons.org/licenses/by/4.0/", MAPILLARY_SOURCE, "mapillary"));
 		assertThat(r.panoramaUrl()).matches("/api/artifacts/[a-f0-9]{16}\\.jpg");
 		assertThat(r.depthUrl()).matches("/api/artifacts/[a-f0-9]{16}-depth\\.png");
-		assertThat(r.depthUrl().substring(15, 31)).isEqualTo(r.panoramaUrl().substring(15, 31));
+		// derinlik adı görsel özeti + normalizasyon anahtarından türer (#66)
+		assertThat(r.depthUrl().substring(15)).isEqualTo(
+				ArtifactStore.depthName(r.panoramaUrl().substring(15), DepthNormalization.defaults().cacheKey(true)));
 
 		Path image = store.resolve(r.panoramaUrl().substring(15)).orElseThrow();
 		Path depth = store.resolve(r.depthUrl().substring(15)).orElseThrow();
