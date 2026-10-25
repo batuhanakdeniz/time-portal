@@ -1,0 +1,33 @@
+.turkey-map {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.turkey-map-canvas {
+  height: min(60vh, 480px);
+  min-height: 280px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b0d14;
+}
+
+.turkey-map-status {
+  margin: 0;
+  font-size: 14px;
+  color: #c9cede;
+}
+
+.turkey-map-error {
+  color: #f87171;
+}
+
+.turkey-map-error button {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #2a3046;
+  background: #141826;
+  color: #c9cede;
+  font: inherit;
+  cursor: pointer;
+}
