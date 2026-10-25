@@ -269,6 +269,31 @@ class DepthMathTest {
 		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 0, 1, 99, 0)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> DepthMath.normalizeToGray(m, 0, 1, 99, Double.NaN)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new DepthNormalization(0.15, 99, 1, 0.7)).isInstanceOf(IllegalArgumentException.class);
+		// mesajlar tam özellik adını taşır
+		assertThatThrownBy(() -> new DepthNormalization(1.5, 1, 99, 0.7))
+			.hasMessageStartingWith("timeportal.depth.normalize.exclude-bottom ");
+		assertThatThrownBy(() -> new DepthNormalization(0.15, 99, 1, 0.7))
+			.hasMessageStartingWith("timeportal.depth.normalize.low-pct and high-pct ");
+		assertThatThrownBy(() -> new DepthNormalization(0.15, 1, 99, -1))
+			.hasMessageStartingWith("timeportal.depth.normalize.gamma ");
+	}
+
+	@Test
+	void cacheKeyIsStableAndChangesWithEveryParameterThatAffectsOutput() {
+		DepthNormalization base = new DepthNormalization(0.15, 1, 99, 0.7);
+		assertThat(base.cacheKey(true)).isEqualTo(new DepthNormalization(0.15, 1, 99, 0.7).cacheKey(true));
+		assertThat(base.cacheKey(true)).isNotEqualTo(base.cacheKey(false));
+		java.util.List<DepthNormalization> variants = java.util.List.of(new DepthNormalization(0.2, 1, 99, 0.7),
+				new DepthNormalization(0.15, 2, 99, 0.7), new DepthNormalization(0.15, 1, 98, 0.7),
+				new DepthNormalization(0.15, 1, 99, 0.6));
+		for (DepthNormalization v : variants) {
+			assertThat(v.cacheKey(true)).as(v.toString()).isNotEqualTo(base.cacheKey(true));
+		}
+		// fotoğrafta alt şerit uygulanmaz: anahtara girmez, diğerleri girer
+		assertThat(variants.get(0).cacheKey(false)).isEqualTo(base.cacheKey(false));
+		for (DepthNormalization v : variants.subList(1, variants.size())) {
+			assertThat(v.cacheKey(false)).as(v.toString()).isNotEqualTo(base.cacheKey(false));
+		}
 	}
 
 	@Test

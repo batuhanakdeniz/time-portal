@@ -31,6 +31,17 @@ public record DepthNormalization(double panoramaExcludeBottom, double lowPercent
 		DepthMath.checkNormalization(panoramaExcludeBottom, lowPercentile, highPercentile, gamma);
 	}
 
+	/**
+	 * Bu ayarların bir görsel türü için çıktıyı belirleyen kısmının kararlı anahtarı. Derinlik yapıt
+	 * adı buradan türetilir: parametre değişince URL de değişir, eski PNG önbellekte kalmaz.
+	 * Fotoğrafta alt şerit uygulanmadığından anahtara girmez. Algoritma değişirse sürüm ({@code v1})
+	 * artırılmalıdır.
+	 */
+	public String cacheKey(boolean panorama) {
+		return "v1|" + (panorama ? "panorama|exclude-bottom=" + panoramaExcludeBottom : "photo")
+				+ "|low-pct=" + lowPercentile + "|high-pct=" + highPercentile + "|gamma=" + gamma;
+	}
+
 	public static DepthNormalization defaults() {
 		return new DepthNormalization(DEFAULT_EXCLUDE_BOTTOM, DEFAULT_LOW_PERCENTILE, DEFAULT_HIGH_PERCENTILE,
 				DEFAULT_GAMMA);

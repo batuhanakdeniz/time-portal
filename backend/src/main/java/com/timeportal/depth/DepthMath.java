@@ -195,13 +195,13 @@ public final class DepthMath {
 	static void checkNormalization(double excludeBottom, double lowPercentile, double highPercentile,
 			double gamma) {
 		if (!(excludeBottom >= 0 && excludeBottom < 1)) {
-			throw new IllegalArgumentException("exclude-bottom must be in [0, 1)");
+			throw new IllegalArgumentException("timeportal.depth.normalize.exclude-bottom must be in [0, 1)");
 		}
 		if (!(lowPercentile >= 0 && lowPercentile < highPercentile && highPercentile <= 100)) {
-			throw new IllegalArgumentException("percentiles must satisfy 0 <= low < high <= 100");
+			throw new IllegalArgumentException("timeportal.depth.normalize.low-pct and high-pct must satisfy 0 <= low-pct < high-pct <= 100");
 		}
 		if (!(gamma > 0 && Double.isFinite(gamma))) {
-			throw new IllegalArgumentException("gamma must be positive and finite");
+			throw new IllegalArgumentException("timeportal.depth.normalize.gamma must be positive and finite");
 		}
 	}
 
