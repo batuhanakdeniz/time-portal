@@ -194,44 +194,98 @@ function withTimeout(outer: AbortSignal | undefined, timeoutMs: number) {
   }
 }
 
-export interface CreateOptions extends CallOptions {
-  timeoutMs?: number
+/** 503 (sunucu meşgul) yanıtında yeniden denemeden önce beklenecek varsayılan süre (docs/API.md). */
+export const DEFAULT_RETRY_AFTER_SEC = 5
+export const MAX_RETRY_AFTER_SEC = 30
+const MIN_RETRY_AFTER_SEC = 1
+/** `createScene` 503 alınca en çok bu kadar yeniden dener (toplam istek = 1 + bu sayı). */
+export const MAX_BUSY_RETRIES = 3
+
+/** RFC 9110 IMF-fixdate, ör. `Sun, 06 Nov 1994 08:49:37 GMT`. Eski HTTP tarih biçimleri desteklenmez. */
+const IMF_FIXDATE = /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/
+
+/**
+ * `Retry-After` başlığı → beklenecek saniye.
+ * - Tam sayı saniye (`"2"`) olduğu gibi alınır.
+ * - IMF-fixdate biçimindeki tarih, `now`'dan o ana kalan süreye (yukarı yuvarlanarak) çevrilir.
+ * - Başlık yoksa ya da geçersizse (negatif, kesirli, başka tarih biçimi, metin) 5 sn.
+ * Sonuç [1, 30] aralığına kırpılır: 0 ya da geçmiş tarih sunucuyu beklemeden yormasın diye en az 1 sn,
+ * aşırı uzun değerler kullanıcıyı bekletmesin diye en çok 30 sn.
+ */
+export function retryAfterSeconds(header: string | null | undefined, now: number = Date.now()): number {
+  const raw = header?.trim() ?? ''
+  let sec = DEFAULT_RETRY_AFTER_SEC
+  if (/^\d+$/.test(raw)) {
+    sec = Number(raw)
+  } else if (IMF_FIXDATE.test(raw)) {
+    const at = Date.parse(raw)
+    if (Number.isFinite(at)) sec = Math.ceil((at - now) / 1000)
+  }
+  return Math.min(MAX_RETRY_AFTER_SEC, Math.max(MIN_RETRY_AFTER_SEC, sec))
 }
 
-export async function createScene(req: SceneRequest, { signal, timeoutMs = 30000 }: CreateOptions = {}): Promise<Scene> {
-  const t = withTimeout(signal, timeoutMs)
-  try {
-    const res = await fetch('/api/scenes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req),
-      signal: t.signal,
-    })
-    return await parseOrThrow(res)
-  } catch (e) {
-    throw t.translate(e)
-  } finally {
-    t.dispose()
+/**
+ * Sunucu 503 döndüğünde, beklemeye başlamadan hemen önce çağrılır.
+ * `seconds`: beklenecek süre (geri sayım için); `attempt`: birazdan yapılacak yeniden denemenin sırası (1'den başlar).
+ */
+export type RetryWaitHandler = (seconds: number, attempt: number) => void
+
+export interface CreateOptions extends CallOptions {
+  /** Deneme başına istek zaman aşımı; 503 sonrası beklemeler bu süreye dahil değildir. */
+  timeoutMs?: number
+  onRetryWait?: RetryWaitHandler
+}
+
+/**
+ * Sahne üretimini başlatır. 503 gelirse `Retry-After` kadar bekleyip en çok 3 kez yeniden dener;
+ * hâlâ 503 ise `ApiError(503)` fırlatır. Diğer hata durumları yeniden denenmez.
+ * Bekleme sırasında dış sinyal iptal edilirse `AbortError` fırlatır ve yeni istek atmaz.
+ */
+export async function createScene(
+  req: SceneRequest,
+  { signal, timeoutMs = 30000, onRetryWait }: CreateOptions = {},
+): Promise<Scene> {
+  for (let attempt = 0; ; attempt++) {
+    const t = withTimeout(signal, timeoutMs)
+    let res: Response
+    try {
+      res = await fetch('/api/scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+        signal: t.signal,
+      })
+      if (res.status !== 503 || attempt >= MAX_BUSY_RETRIES) return await parseOrThrow(res)
+    } catch (e) {
+      throw t.translate(e)
+    } finally {
+      t.dispose()
+    }
+    const seconds = retryAfterSeconds(res.headers.get('Retry-After'))
+    onRetryWait?.(seconds, attempt + 1)
+    await sleep(seconds * 1000, signal)
   }
 }
 
+const sceneUrl = (id: string) => `/api/scenes/${encodeURIComponent(id)}`
+
 export async function getScene(id: string, { signal }: CallOptions = {}): Promise<Scene> {
-  const res = await fetch(`/api/scenes/${encodeURIComponent(id)}`, { signal })
+  const res = await fetch(sceneUrl(id), { signal })
   return parseOrThrow(res)
 }
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal.aborted) return reject(abortError())
+    if (signal?.aborted) return reject(abortError())
     const onAbort = () => {
       clearTimeout(timer)
       reject(abortError())
     }
     const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
+      signal?.removeEventListener('abort', onAbort)
       resolve()
     }, ms)
-    signal.addEventListener('abort', onAbort, { once: true })
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -239,23 +293,43 @@ export interface WaitOptions extends CallOptions {
   intervalMs?: number
   timeoutMs?: number
   onStatus?: (status: SceneStatus, scene: Scene) => void
+  /**
+   * true ise yoklamada gelen 503 hata sayılmaz: `Retry-After` kadar beklenip yoklamaya devam edilir.
+   * Varsayılan false (eski davranış: 503 → `ApiError(503)`); arayüz bağlanınca (#63) açılır.
+   */
+  retryOnBusy?: boolean
+  /** `retryOnBusy` iken yoklama 503 aldığında çağrılır; `attempt` art arda gelen 503 sayısıdır (başarılı yanıtta sıfırlanır). */
+  onRetryWait?: RetryWaitHandler
 }
 
 /**
  * READY ya da FAILED olana kadar yoklar ve son durumu döner. Toplam süre tek bir sinyalle sınırlıdır:
  * asılı kalan istek de dahil zaman aşımında SceneTimeoutError, dış iptalde AbortError fırlatır.
+ * `retryOnBusy` iken 503 gelirse `Retry-After` kadar bekleyip aynı kimlikle yoklamaya devam eder;
+ * deneme sayısı sınırsızdır, yalnızca toplam zaman aşımı geçerlidir.
  */
 export async function waitForScene(
   id: string,
-  { intervalMs = 1000, timeoutMs = 60000, signal: outer, onStatus }: WaitOptions = {},
+  { intervalMs = 1000, timeoutMs = 60000, signal: outer, onStatus, retryOnBusy = false, onRetryWait }: WaitOptions = {},
 ): Promise<Scene> {
   const t = withTimeout(outer, timeoutMs)
   const { signal } = t
   let last: SceneStatus | null = null
+  let busy = 0
   try {
     for (;;) {
       if (signal.aborted) throw abortError()
-      const scene = await getScene(id, { signal })
+      const res = await fetch(sceneUrl(id), { signal })
+      if (signal.aborted) throw abortError()
+      if (retryOnBusy && res.status === 503) {
+        busy++
+        const seconds = retryAfterSeconds(res.headers.get('Retry-After'))
+        onRetryWait?.(seconds, busy)
+        await sleep(seconds * 1000, signal)
+        continue
+      }
+      busy = 0
+      const scene = await parseOrThrow(res)
       if (signal.aborted) throw abortError()
       if (scene.status !== last) {
         last = scene.status
