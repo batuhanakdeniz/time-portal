@@ -10,7 +10,8 @@ import javax.imageio.ImageIO;
 
 /**
  * Görsel → derinlik PNG'si hattı: boyut sınırı, (panoramada) sarmalı dolgu, çıkarım, kırpma, kutup
- * yumuşatma, min-max normalizasyon (açık = yakın, #5 Karar 4A) ve gri PNG kodlama. Çıkarımı
+ * yumuşatma, sağlam ölçekli normalizasyon ({@link DepthNormalization}: panoramada alt şerit hariç
+ * istatistik, yüzdelik kırpma, gamma; açık = yakın, #5 Karar 4A, #66) ve gri PNG kodlama. Çıkarımı
  * {@link DepthEstimator} yapar; bu sınıf modelden bağımsızdır.
  */
 public class DepthPipeline {
@@ -25,9 +26,20 @@ public class DepthPipeline {
 	public static final double POLE_FRACTION = 0.05;
 
 	private final DepthEstimator estimator;
+	private final DepthNormalization normalization;
 
+	/** Varsayılan normalizasyonla ({@link DepthNormalization#defaults()}). */
 	public DepthPipeline(DepthEstimator estimator) {
+		this(estimator, DepthNormalization.defaults());
+	}
+
+	public DepthPipeline(DepthEstimator estimator, DepthNormalization normalization) {
 		this.estimator = estimator;
+		this.normalization = normalization;
+	}
+
+	public DepthNormalization normalization() {
+		return normalization;
 	}
 
 	/** Görseli tür sınırlarına küçültür (büyütmez). Sınır içindeyse aynı nesneyi döner. */
@@ -62,7 +74,10 @@ public class DepthPipeline {
 		if (map.width() != image.getWidth() || map.height() != image.getHeight()) {
 			map = DepthMath.resizeBilinear(map, image.getWidth(), image.getHeight());
 		}
-		return grayPng(DepthMath.normalizeToGray(map), map.width(), map.height());
+		DepthNormalization n = normalization;
+		byte[] gray = DepthMath.normalizeToGray(map, panorama ? n.panoramaExcludeBottom() : 0, n.lowPercentile(),
+				n.highPercentile(), n.gamma());
+		return grayPng(gray, map.width(), map.height());
 	}
 
 	/** Görselin sağ ucundaki sütunları sola, sol ucundakileri sağa ekler (equirectangular sarma). */

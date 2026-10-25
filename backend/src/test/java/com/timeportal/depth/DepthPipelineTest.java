@@ -154,6 +154,42 @@ class DepthPipelineTest {
 		assertThat(near).isEqualTo(255);
 	}
 
+	/** Satıra göre derinlik: alt 3 satır (%15) çok yakın zemin, üstü satır no. Girdi boyutunda döner. */
+	private static final DepthEstimator GROUND_ESTIMATOR = image -> {
+		int w = image.getWidth();
+		int h = image.getHeight();
+		float[] v = new float[w * h];
+		for (int y = 0; y < h; y++) {
+			for (int x = 0; x < w; x++) {
+				v[y * w + x] = y >= h - 3 ? 1000f : y;
+			}
+		}
+		return new DepthMap(w, h, v);
+	};
+
+	private static int midRowGray(byte[] png) throws IOException {
+		BufferedImage out = ImageIO.read(new ByteArrayInputStream(png));
+		assertThat(out.getType()).isEqualTo(BufferedImage.TYPE_BYTE_GRAY);
+		assertThat(out.getWidth()).isEqualTo(40);
+		assertThat(out.getHeight()).isEqualTo(20);
+		assertThat(out.getRaster().getSample(20, 19, 0)).isEqualTo(255); // zemin yine en açık
+		return out.getRaster().getSample(20, 10, 0);
+	}
+
+	@Test
+	void depthPngExcludesGroundStripOnlyForPanoramas() throws IOException {
+		BufferedImage img = new BufferedImage(40, 20, BufferedImage.TYPE_INT_RGB);
+		DepthPipeline pipeline = new DepthPipeline(GROUND_ESTIMATOR);
+		int panorama = midRowGray(pipeline.depthPng(img, true));
+		int photo = midRowGray(pipeline.depthPng(img, false));
+		// panoramada orta satır (10/16) açık tonda; fotoğrafta zemin istatistikte kalır, orta satır koyu
+		assertThat(panorama).isGreaterThan(150);
+		assertThat(photo).isLessThan(60);
+		// eski min-max davranışı yapılandırmayla geri alınabilir
+		int legacy = midRowGray(new DepthPipeline(GROUND_ESTIMATOR, DepthNormalization.MIN_MAX).depthPng(img, true));
+		assertThat(legacy).isLessThan(5);
+	}
+
 	@Test
 	void depthPngResizesEstimatorOutputToImageSize() throws IOException {
 		DepthEstimator smallOutput = image -> new DepthMap(2, 2, new float[] {0, 1, 2, 3});
