@@ -86,16 +86,14 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 ## Sıradaki adım
 
-Güncel durum her zaman GitHub'da: `gh issue list --label karar`, `gh issue list --label F3-akış`, `gh pr list`.
+Güncel durum her zaman GitHub'da: `gh issue list --label F3-akış`, `gh pr list`.
 
-**Faz 1 tamamlandı (25.10.2026).** Akış uçtan uca çalışıyor: Türkiye'de konum → ilçe → ilçe merkezi görseli (Mapillary 360° ya da Commons fotoğrafı) → derinlik → 360° ya da 2.5B görünüm; ilçe/il, "2026 görünümü" notu, atıf ve Türkçe hatalar ekranda.
+**Faz 3 akışı main'de (25.10.2026, #58–#66, #63).** Üç sayfa: `/` höyük kesiti yıl seçimi → `/yil/:yil` altlıksız il/ilçe haritası (gri iller, lacivert seçim, arama yedeği) → `/yil/:yil/yer/:yer/sahne` tam ekran sahne (yükleme ekranı aşamalarla, katmanlar, atıf, Türkçe hatalar, 503 otomatik yeniden deneme). Backend `period`/`stage` döndürüyor; kurgu dönemlerde (tarih öncesi, gelecek) "sahne henüz yok". 2.5B ince nesne bozulması ve derinlik ölçeği düzeltildi. Sözleşme: `docs/FAZ3.md`.
 
-**Faz 2 (araştırma) raporu hazır:** `docs/arastirma/faz2-arastirma-raporu.md`. Özet: harita için altlıksız MapLibre (prototip çalıştı); sahne üretimi için dönem kovaları × il, çevrimdışı yerel üretim + gerçek arazi, canlıda API yok; akış için üç sayfa ve "höyük kesiti" yıl ekranı. 8 karar #57'de.
+Kalan Faz 3 işleri: #67 üretim pilotu (20 sahne, Mac mini), #77 tek yerde kırpma, #78 yoklama tekilleştirme + ölü kod temizliği.
 
-**Faz 3 (akış)** #57 cevaplanınca açılır: yönlendirme + 3 sayfa iskeleti → altlıksız harita → yıl ekranı → tam ekran sahne + yükleme (`stage` alanı) → üretim pilotu (20 sahne) → ikinci karar turu → toplu üretim.
+Bilinen sınırlar: dönem sahneleri henüz üretilmedi (yorum dönemlerinde bugünkü görsel + not gösteriliyor); uygulama içi tarayıcı panelinde GeoJSON yüklemesi 30–60 sn sürebiliyor (gerçek Chrome'da ölçülmeli); Mapillary logosu kararı açık.
 
-Orkestrasyon: routine durduruldu (#13 sonrası karar C); işler orkestratör oturumundan elle yürütülüyor. Bulut ortamına geçiş Faz 3'te değerlendirilecek.
+Orkestrasyon: routine durduruldu (#13 sonrası karar C); işler orkestratör oturumundan elle yürütülüyor.
 
 Yerelde gerçek üretici: `timeportal.generator=city-image` (varsayılan), Mapillary için `MAPILLARY_TOKEN` ortam değişkeni. Model ilk istekte indirilir (`backend/MODELS.md`). Testler ve CI `fake` kullanır.
-
-Açık sahip kararları: #57 (Faz 3 yönü), Mapillary logosu (şartlar md. 11; şimdilik yalnızca metin bağlantısı), yayın öncesi kota/içerik güvenliği (#56'da not).
