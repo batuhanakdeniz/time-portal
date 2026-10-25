@@ -1,60 +1,83 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { MapSection } from '../location/MapSection'
-import { formatCoordinates, type Selection } from '../location/coordinates'
-import { formatYear } from '../lib/year'
+import { LazyTurkeyMap } from './LazyTurkeyMap'
+import { PlaceSearch } from '../location/PlaceSearch'
+import { placeToSlug, type PlaceSelection } from '../location/place'
+import { usePlaces, type PlacesData } from '../location/places'
 import { mapPath, scenePath } from '../routing/paths'
 import { writeStoredYear } from '../routing/storedYear'
 import { useRouteGuard } from './routeGuard'
-import type { RouteState } from './routeState'
+import { INVALID_PLACE_NOTICE } from './routeState'
 import { RouteNotice, useOneTimeNotice, YearBadge } from './YearBadge'
-
-/**
- * Geçici yer slug'ı: mevcut `MapSection` yalnızca enlem/boylam verir, il (plaka) bilinmez.
- * Koordinat `location.state` içinde taşınır. #63 `TurkeyMap` + `placeToSlug` ile bunu kaldıracak.
- */
-export const UNRESOLVED_PLACE_SLUG = '00'
 
 /** `/yil/:yil` ve `/yil/:yil/yer/:yer`: harita. */
 export function MapPage() {
   const guard = useRouteGuard('map')
   if ('redirect' in guard) return guard.redirect
-  return <MapContent year={guard.year} placeSlug={guard.placeSlug} state={guard.state} />
+  return <MapContent year={guard.year} placeSlug={guard.placeSlug} />
 }
 
-function MapContent({ year, placeSlug, state }: { year: number; placeSlug?: string; state: RouteState }) {
+/** Alt sayfa metni: "İstanbul · 39 ilçe · ilçe seçmek isteğe bağlı" ya da "Beyoğlu, İstanbul". */
+export function selectionSummary(p: PlaceSelection, data: PlacesData | null): string {
+  if (p.district) return `${p.district.name}, ${p.province}`
+  const n = data?.districtsByPlate.get(p.plate)?.length
+  return n ? `${p.province} · ${n} ilçe · ilçe seçmek isteğe bağlı` : `${p.province} · ilçe seçmek isteğe bağlı`
+}
+
+function MapContent({ year, placeSlug }: { year: number; placeSlug?: string }) {
   const navigate = useNavigate()
-  // Seçimin tek kaynağı geçmiş kaydı: geri tuşuyla dönüldüğünde seçim korunur.
-  const selection = state.selection ?? null
+  const { state, findBySlug } = usePlaces()
   const notice = useOneTimeNotice()
+  // Bilinmeyen yer slug'ı bu sayfa açıkken düzeltildiğinde (aynı bileşen kalır) gösterilen mesaj.
+  const [localNotice, setLocalNotice] = useState<string>()
+
+  // Seçimin tek kaynağı URL: `:yer` → PlaceSelection. Geri tuşu ve derin bağlantı aynı yoldan çözülür.
+  const selected = useMemo(
+    () => (placeSlug !== undefined && state.status === 'ready' ? findBySlug(placeSlug) : null),
+    [placeSlug, state.status, findBySlug],
+  )
+  const unknownPlace = placeSlug !== undefined && state.status === 'ready' && selected === null
 
   useEffect(() => writeStoredYear(year), [year])
 
-  const onChange = (v: Selection | null) => {
+  useEffect(() => {
+    if (!unknownPlace) return
+    setLocalNotice(INVALID_PLACE_NOTICE)
+    navigate(mapPath(year), { replace: true })
+  }, [unknownPlace, year, navigate])
+
+  const onSelect = (p: PlaceSelection) => {
+    setLocalNotice(undefined)
     // Aynı sayfada seçim değişimi replace: geri tuşu her tıklamayı tek tek geri almaz.
-    if (v) navigate(mapPath(year, UNRESOLVED_PLACE_SLUG), { replace: true, state: { selection: v } satisfies RouteState })
-    else navigate(mapPath(year), { replace: true })
+    navigate(mapPath(year, placeToSlug(p)), { replace: true })
   }
 
   const seeScene = () => {
-    if (!selection) return
-    navigate(scenePath(year, placeSlug ?? UNRESOLVED_PLACE_SLUG), { state: { selection } satisfies RouteState })
+    if (selected) navigate(scenePath(year, placeToSlug(selected)))
   }
 
-  const summary = `${formatYear(year)} · ${selection ? formatCoordinates(selection) : 'Haritadan konum seç'}`
   return (
     <section className="page page-map" aria-label="Harita">
-      <div className="page-bar">
+      <div className="map-bar">
         <YearBadge year={year} />
+        <div className="map-heading">
+          <h2>Nereye gidiyoruz?</h2>
+          <p>Bir il seç; istersen ilçeye in.</p>
+        </div>
       </div>
-      <RouteNotice notice={notice} />
-      <div className="panel">
-        <MapSection value={selection} onChange={onChange} />
+      <RouteNotice notice={notice ?? localNotice} />
+      <div className="map-search">
+        <PlaceSearch selected={selected} onSelect={onSelect} />
       </div>
-      <div className="actions">
-        <p className="summary">{summary}</p>
-        <button type="button" className="generate" disabled={!selection} onClick={seeScene}>
-          Sahneyi gör
+      <div className="map-canvas">
+        <LazyTurkeyMap selected={selected} onSelect={onSelect} />
+      </div>
+      <div className="map-sheet">
+        <p className="map-sheet-summary" data-testid="map-summary">
+          {selected ? selectionSummary(selected, state.data) : 'Haritadan ya da aramadan bir il seç.'}
+        </p>
+        <button type="button" className="generate" disabled={!selected} onClick={seeScene}>
+          Sahneyi gör <span aria-hidden="true">→</span>
         </button>
       </div>
     </section>

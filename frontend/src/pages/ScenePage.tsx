@@ -1,117 +1,126 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
-import type { Selection } from '../location/coordinates'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, Navigate, useNavigate } from 'react-router'
 import { formatYear } from '../lib/year'
+import type { PlaceSelection } from '../location/place'
+import { usePlaces, type PlacesData } from '../location/places'
+import { isAbortError, type SceneResult, type SceneStage } from '../api/scenes'
 import { ViewerSection } from '../scene/ViewerSection'
-import { Attribution } from '../scene/Attribution'
-import { placeTitle, yearNote } from '../scene/resultInfo'
-import { apiErrorMessage, failedMessage } from '../api/errorMessages'
-import { ApiError, createScene, isAbortError, SceneTimeoutError, waitForScene, type SceneResult, type SceneStatus } from '../api/scenes'
-import { mapPath } from '../routing/paths'
+import { SceneOverlay } from '../scene/SceneOverlay'
+import { LoadingScreen } from '../scene/LoadingScreen'
+import { SceneError, type SceneErrorKind } from '../scene/SceneError'
+import { mapPath, scenePath } from '../routing/paths'
 import { useRouteGuard } from './routeGuard'
-import { UNRESOLVED_LINK_MESSAGE, type RouteState } from './routeState'
-import { YearBadge } from './YearBadge'
+import { INVALID_PLACE_NOTICE, type RouteState } from './routeState'
+import { nearestDistricts } from './nearby'
+import { errorKind, failedKind, runScene } from './sceneJob'
 
-const POLL_INTERVAL_MS = 1000
-const POLL_TIMEOUT_MS = 120_000
+/** Önbellekteki sahne bu sürede gelirse yükleme ekranı hiç gösterilmez (ekran yanıp sönmez). */
+export const LOADER_DELAY_MS = 300
+const ELAPSED_TICK_MS = 1000
 
 type Phase =
-  | { kind: 'submitting' }
-  | { kind: 'progress'; status: SceneStatus }
+  | { kind: 'loading'; stage: SceneStage | null }
+  /** Sunucu meşgul (503); istemci `until` anında kendiliğinden yeniden dener. */
+  | { kind: 'busy'; until: number }
   | { kind: 'ready'; result: SceneResult }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; error: SceneErrorKind }
 
-const progressText: Record<SceneStatus, string> = {
-  PENDING: 'Sırada…',
-  RUNNING: 'Üretiliyor…',
-  READY: 'Sahne hazır',
-  FAILED: 'Üretim başarısız',
-}
-
-function phaseText(phase: Phase): string {
-  switch (phase.kind) {
-    case 'submitting':
-      return 'Gönderiliyor…'
-    case 'progress':
-      return progressText[phase.status]
-    case 'ready':
-      return progressText.READY
-    case 'error':
-      return phase.message
-  }
-}
-
-function errorMessage(e: unknown): string {
-  if (e instanceof ApiError) return apiErrorMessage(e.status, e.message)
-  if (e instanceof SceneTimeoutError) return 'Üretim çok uzun sürdü, lütfen tekrar dene'
-  if (e instanceof TypeError) return 'Sunucuya ulaşılamadı'
-  return 'Beklenmeyen bir hata oluştu'
-}
-
-/** `/yil/:yil/yer/:yer/sahne`: sahne. #63 burada `LoadingScreen`, `SceneOverlay`, `SceneError`'u takacak. */
+/** `/yil/:yil/yer/:yer/sahne`: tam ekran sahne (yükleme → görüntüleyici + katmanlar, ya da hata). */
 export function ScenePage() {
   const guard = useRouteGuard('scene')
-  const navigate = useNavigate()
   if ('redirect' in guard) return guard.redirect
-  const { year, placeSlug, state, entry } = guard
-  const selection = state.selection
+  // Rota tanımı gereği :yer her zaman vardır.
+  return <SceneContent year={guard.year} placeSlug={guard.placeSlug ?? ''} entry={guard.entry} />
+}
 
-  const back = () => {
-    // Derin bağlantıyla gelindiyse geride sitemiz yok: üst rotaya replace, siteden çıkma.
-    if (entry) navigate(mapPath(year, placeSlug), { replace: true, state: selection ? ({ selection } satisfies RouteState) : undefined })
+function SceneContent({ year, placeSlug, entry }: { year: number; placeSlug: string; entry: boolean }) {
+  const navigate = useNavigate()
+  const places = usePlaces()
+  const { state, findBySlug } = places
+  const selection = useMemo(() => (state.status === 'ready' ? findBySlug(placeSlug) : null), [state.status, findBySlug, placeSlug])
+
+  // "←", "Yer ✎" ve "Vazgeç": haritaya döner, seçim korunur. Derin bağlantıyla (ya da öneriyle) gelindiyse
+  // geride bu yerin haritası yoktur: üst rotaya replace, siteden çıkma.
+  const toMap = useCallback(() => {
+    if (entry) navigate(mapPath(year, placeSlug), { replace: true })
     else navigate(-1)
-  }
+  }, [entry, navigate, year, placeSlug])
 
+  if (state.status === 'ready' && !selection) {
+    return <Navigate to={mapPath(year)} replace state={{ notice: INVALID_PLACE_NOTICE } satisfies RouteState} />
+  }
+  if (state.status === 'error') {
+    return <SceneError kind="network" onRetry={places.retry} onBack={toMap} />
+  }
   return (
-    <section className="page page-scene" aria-label="Sahne">
-      <div className="page-bar">
-        <button type="button" className="back" aria-label="Haritaya dön" onClick={back}>
-          ←
-        </button>
-        <YearBadge year={year} />
-      </div>
-      {selection ? (
-        <SceneRun key={`${year}:${selection.latitude}:${selection.longitude}`} year={year} selection={selection} />
-      ) : (
-        <p className="scene-missing">{UNRESOLVED_LINK_MESSAGE}</p>
-      )}
-    </section>
+    <SceneRun
+      key={`${year}:${placeSlug}`}
+      year={year}
+      placeSlug={placeSlug}
+      selection={selection}
+      data={state.data}
+      onBack={toMap}
+      onEditYear={() => navigate('/')}
+    />
   )
 }
 
-/** Sayfa açılınca üretimi başlatır; sayfadan çıkınca (geri tuşu dahil) yoklamayı iptal eder. */
-function SceneRun({ year, selection }: { year: number; selection: Selection }) {
-  const [phase, setPhase] = useState<Phase>({ kind: 'submitting' })
+interface SceneRunProps {
+  year: number
+  placeSlug: string
+  /** Yer verisi yüklenene kadar null: istek atılmaz, yükleme ekranı sürer. */
+  selection: PlaceSelection | null
+  data: PlacesData | null
+  onBack(): void
+  onEditYear(): void
+}
+
+/** Yer çözülünce üretimi başlatır; sayfadan çıkınca (geri tuşu, Vazgeç dahil) isteği ve yoklamayı iptal eder. */
+function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: SceneRunProps) {
+  const [phase, setPhase] = useState<Phase>({ kind: 'loading', stage: null })
+  const [showLoader, setShowLoader] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+  const startedAt = useRef(Date.now())
   const controllerRef = useRef<AbortController | null>(null)
-  const { latitude, longitude } = selection
+  const lat = selection?.center.lat
+  const lon = selection?.center.lon
 
   const generate = useCallback(async () => {
+    if (lat === undefined || lon === undefined) return
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
     const { signal } = controller
-    setPhase({ kind: 'submitting' })
+    setPhase({ kind: 'loading', stage: null })
     try {
-      const created = await createScene({ year, latitude, longitude }, { signal })
-      if (signal.aborted) return
-      setPhase({ kind: 'progress', status: created.status })
-      const done = await waitForScene(created.id, {
-        intervalMs: POLL_INTERVAL_MS,
-        timeoutMs: POLL_TIMEOUT_MS,
-        signal,
-        onStatus: (status) => {
-          if (!signal.aborted && status !== 'READY' && status !== 'FAILED') setPhase({ kind: 'progress', status })
+      // İstek tıklanan nokta yerine ilçe (ya da il) merkeziyle gider: aynı yer her zaman aynı istek, önbellek isabeti.
+      const done = await runScene(
+        { year, latitude: lat, longitude: lon },
+        {
+          signal,
+          onRetryWait: (seconds) => {
+            if (signal.aborted) return
+            const t = Date.now()
+            setNow(t)
+            setPhase({ kind: 'busy', until: t + seconds * 1000 })
+          },
+          onUpdate: (scene) => {
+            if (!signal.aborted && scene.status !== 'READY' && scene.status !== 'FAILED') {
+              setPhase({ kind: 'loading', stage: scene.stage ?? null })
+            }
+          },
         },
-      })
+      )
       if (signal.aborted) return
       if (done.status === 'READY' && done.result) setPhase({ kind: 'ready', result: done.result })
-      else if (done.status === 'READY') setPhase({ kind: 'error', message: 'Sunucu geçersiz sonuç döndü' })
-      else setPhase({ kind: 'error', message: failedMessage(done.error) })
+      else if (done.status === 'READY') setPhase({ kind: 'error', error: 'unknown' })
+      else setPhase({ kind: 'error', error: failedKind(done.error) })
     } catch (e) {
       if (isAbortError(e) || signal.aborted) return
-      setPhase({ kind: 'error', message: errorMessage(e) })
+      setPhase({ kind: 'error', error: errorKind(e) })
     }
-  }, [year, latitude, longitude])
+  }, [year, lat, lon])
 
   useEffect(() => {
     // StrictMode etkiyi kur-sök-kur yapar. İstek bir mikro görev sonra gönderilir; o ana dek
@@ -126,36 +135,111 @@ function SceneRun({ year, selection }: { year: number; selection: Selection }) {
     }
   }, [generate])
 
-  const result = phase.kind === 'ready' ? phase.result : null
-  const title = result ? placeTitle(result.place, selection) : ''
-  const isPhoto = result?.kind === 'photo'
-  return (
-    <>
-      <div className="actions">
-        <p className={`status status-${phase.kind}`} role={phase.kind === 'error' ? 'alert' : 'status'}>
-          {phaseText(phase)}
-          {phase.kind === 'progress' && phase.status === 'RUNNING' && <span className="status-hint"> İlk sahne 30 saniyeyi bulabilir.</span>}
-        </p>
-        {phase.kind === 'error' && (
-          <button type="button" className="generate" onClick={() => void generate()}>
-            Tekrar dene
-          </button>
-        )}
-      </div>
+  // Süre sayacı yüklemede, geri sayım meşgulken ilerler (ikisi de saniyede bir).
+  const loading = phase.kind === 'loading' || phase.kind === 'busy'
 
-      {result && (
-        <section className="result" aria-label="Sonuç">
-          <h2 className="result-title">{title}</h2>
-          <p className="result-note">{yearNote(year)}</p>
-          <ViewerSection
-            src={result.panoramaUrl}
-            depthUrl={result.depthUrl}
-            kind={result.kind}
-            alt={`Üretilen ${isPhoto ? 'fotoğraf' : 'panorama'}: ${formatYear(year)}, ${title}`}
-          />
-          <Attribution attribution={result.attribution} />
-        </section>
-      )}
-    </>
+  // Yükleyici gecikmesi yalnızca ilk açılışta; "Tekrar dene"den sonra hemen gösterilir.
+  useEffect(() => {
+    const t = setTimeout(() => setShowLoader(true), LOADER_DELAY_MS)
+    return () => clearTimeout(t)
+  }, [])
+
+  useEffect(() => {
+    if (!loading) return
+    const tick = () => {
+      const t = Date.now()
+      setNow(t)
+      setElapsedMs(t - startedAt.current)
+    }
+    tick()
+    const id = setInterval(tick, ELAPSED_TICK_MS)
+    return () => clearInterval(id)
+  }, [loading])
+
+  const retry = () => {
+    startedAt.current = Date.now()
+    setElapsedMs(0)
+    setShowLoader(true)
+    void generate()
+  }
+
+  const suggestions = useMemo(
+    () => (phase.kind === 'error' && phase.error === 'no-image' && data && selection ? nearestDistricts(data, selection) : []),
+    [phase, data, selection],
+  )
+
+  if (phase.kind === 'busy') {
+    // Otomatik yeniden deneme sürüyor: geri sayım; "Tekrar dene" beklemeden hemen dener.
+    const retryAfterSec = Math.max(0, Math.ceil((phase.until - now) / 1000))
+    return <SceneError kind="busy" retryAfterSec={retryAfterSec} onRetry={retry} onBack={onBack} />
+  }
+
+  if (phase.kind === 'error') {
+    return (
+      <>
+        <SceneError kind={phase.error} onRetry={retry} onBack={onBack} />
+        {suggestions.length > 0 && (
+          <nav className="scene-suggestions" aria-label="Yakındaki ilçeler">
+            <p className="scene-suggestions-title">Yakındaki ilçeleri dene</p>
+            <ul>
+              {suggestions.map((d) => (
+                <li key={d.key}>
+                  {/* Öneri aynı sayfada yer değişimi: replace; "←" önerilen yerin haritasına gider. */}
+                  <Link to={scenePath(year, d.key)} replace state={{ entry: true } satisfies RouteState}>
+                    {d.name}, {d.province}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+      </>
+    )
+  }
+
+  if (phase.kind === 'loading') {
+    if (!showLoader) {
+      return (
+        <div className="scene-page" aria-busy="true">
+          <p className="sr-only" role="status">
+            Sahne hazırlanıyor…
+          </p>
+        </div>
+      )
+    }
+    return <LoadingScreen stage={phase.stage} elapsedMs={elapsedMs} targetYear={year} onCancel={onBack} />
+  }
+
+  // READY: seçim yüklenmeden READY olamaz (istek seçimle atılır).
+  const place = selection!
+  const { result } = phase
+  const kind = result.kind === 'photo' ? 'photo' : 'panorama'
+  const placeName = place.district ? `${place.district.name}, ${place.province}` : place.province
+  // Göreli adres: SceneOverlay aynı kökenle tam URL'ye çevirir (http geliştirme sunucusunda da doğru bağlantı).
+  const shareUrl = scenePath(year, placeSlug)
+  return (
+    <div className="scene-page">
+      <div className="scene-stage" data-testid="scene-stage">
+        <ViewerSection
+          src={result.panoramaUrl}
+          depthUrl={result.depthUrl}
+          kind={kind}
+          alt={`Üretilen ${kind === 'photo' ? 'fotoğraf' : 'panorama'}: ${formatYear(year)}, ${placeName}`}
+          showFullscreenButton={false}
+        />
+      </div>
+      <SceneOverlay
+        year={year}
+        place={{ province: place.province, district: place.district?.name }}
+        period={result.period}
+        kind={kind}
+        attribution={result.attribution}
+        onBack={onBack}
+        onShare={() => {}}
+        onEditYear={onEditYear}
+        onEditPlace={onBack}
+        shareUrl={shareUrl}
+      />
+    </div>
   )
 }

@@ -7,9 +7,8 @@ import './App.css'
 function Layout() {
   return (
     <main className="app">
-      <header>
-        <h1>Time Portal</h1>
-      </header>
+      {/* Sayfalar tam ekran; marka başlığı yalnızca ekran okuyucular için. */}
+      <h1 className="sr-only">Time Portal</h1>
       <Outlet />
     </main>
   )
