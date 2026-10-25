@@ -152,6 +152,65 @@ describe('PlaceSearch', () => {
     expect(input).toHaveValue('')
   })
 
+  describe('seçim varken kutu', () => {
+    const karatay = () => searchPlaces(data, 'karatay')[0].selection
+
+    it('odaklanınca metin tümüyle seçilir', async () => {
+      const { input } = await renderSearch(karatay())
+      expect(input).toHaveValue('Karatay, Konya')
+      act(() => input.focus())
+      expect((input as HTMLInputElement).selectionStart).toBe(0)
+      expect((input as HTMLInputElement).selectionEnd).toBe('Karatay, Konya'.length)
+    })
+
+    it('odaklayan tıklamanın mouseup\'ı seçimi bozmaz; sonraki tıklama bozabilir', async () => {
+      const { input } = await renderSearch(karatay())
+      act(() => input.focus())
+      expect(fireEvent.mouseUp(input)).toBe(false) // preventDefault
+      expect(fireEvent.mouseUp(input)).toBe(true)
+    })
+
+    it('yazmak eski metnin yerine geçer, liste yeni sorguya göre açılır', async () => {
+      const { input } = await renderSearch(karatay())
+      act(() => input.focus())
+      fireEvent.click(input)
+      fireEvent.change(input, { target: { value: 'beyo' } })
+      expect(input).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('option', { name: /Beyoğlu/ })).toBeInTheDocument()
+      expect(screen.queryByText('Sonuç yok')).toBeNull()
+    })
+
+    it('Esc yazılanı bırakır, seçili yerin metnini geri getirir ve listeyi kapatır', async () => {
+      const { input, onSelect } = await renderSearch(karatay())
+      fireEvent.change(input, { target: { value: 'beyo' } })
+      fireEvent.keyDown(input, { key: 'Escape' })
+      expect(input).toHaveValue('Karatay, Konya')
+      expect(input).toHaveAttribute('aria-expanded', 'false')
+      // liste kapalıyken ikinci Esc seçili yerin metnini silmez
+      fireEvent.keyDown(input, { key: 'Escape' })
+      expect(input).toHaveValue('Karatay, Konya')
+      expect(onSelect).not.toHaveBeenCalled()
+    })
+
+    it('odak kaybında seçili yerin metni geri gelir', async () => {
+      const { input, onSelect } = await renderSearch(karatay())
+      act(() => input.focus())
+      fireEvent.change(input, { target: { value: 'beyo' } })
+      act(() => input.blur())
+      expect(input).toHaveValue('Karatay, Konya')
+      expect(input).toHaveAttribute('aria-expanded', 'false')
+      expect(onSelect).not.toHaveBeenCalled()
+    })
+
+    it('seçim yokken odak kaybı yazılanı korur', async () => {
+      const { input } = await renderSearch()
+      act(() => input.focus())
+      fireEvent.change(input, { target: { value: 'ank' } })
+      act(() => input.blur())
+      expect(input).toHaveValue('ank')
+    })
+  })
+
   it('fareyle ilçe seçimi ilçe merkeziyle', async () => {
     const { input, onSelect } = await renderSearch()
     fireEvent.change(input, { target: { value: 'kadıköy' } })

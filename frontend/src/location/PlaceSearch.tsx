@@ -92,6 +92,8 @@ export function PlaceSearch({ selected, onSelect }: Props) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
   const listRef = useRef<HTMLUListElement>(null)
+  // Odaklanınca metin tümüyle seçilir; odaklayan tıklamanın mouseup'ı bu seçimi bozmasın
+  const justFocused = useRef(false)
 
   // Seçim dışarıdan (haritadan) değişince kutudaki metin de güncellenir
   const selectedSlug = selected ? placeToSlug(selected) : ''
@@ -136,13 +138,15 @@ export function PlaceSearch({ selected, onSelect }: Props) {
         choose(opt)
       }
     } else if (e.key === 'Escape') {
-      if (open) {
-        e.preventDefault()
-        setOpen(false)
-        setActive(-1)
-      } else if (text) {
+      if (open) e.preventDefault()
+      if (selected) {
+        // Seçim varken Esc yazılanı bırakır, seçili yerin adını geri getirir
+        setText(selectedLabel)
+      } else if (!open && text) {
         setText('')
       }
+      setOpen(false)
+      setActive(-1)
     } else if (e.key === 'Tab') {
       setOpen(false)
     }
@@ -172,8 +176,22 @@ export function PlaceSearch({ selected, onSelect }: Props) {
           setOpen(true)
           setActive(-1)
         }}
+        onFocus={(e) => {
+          justFocused.current = true
+          e.currentTarget.select() // yazmak eski metnin ("Karatay, Konya") yerine geçsin
+        }}
+        onMouseUp={(e) => {
+          if (justFocused.current) e.preventDefault()
+          justFocused.current = false
+        }}
         onClick={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onBlur={() => {
+          justFocused.current = false
+          setOpen(false)
+          setActive(-1)
+          // Seçim yapılmadan çıkılırsa seçili yerin adı geri gelir
+          if (selected) setText(selectedLabel)
+        }}
         onKeyDown={onKeyDown}
       />
       <ul id={listId} ref={listRef} role="listbox" aria-label="Sonuçlar" className="place-search-list" hidden={!open}>
