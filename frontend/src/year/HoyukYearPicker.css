@@ -1,0 +1,622 @@
+/* Höyük kesiti (Konsept C). Renkler wireframe'den: zemin #0f1115, panel #171a21, çizgi #2a2f3a,
+   soluk metin #8a8f98, metin #e6e8f0, vurgu #5b7bd5. Yalnızca transform/opacity canlandırılır. */
+
+.hoyuk {
+  --hoyuk-bg: #0f1115;
+  --hoyuk-sky: #090b10;
+  --hoyuk-panel: #171a21;
+  --hoyuk-border: #2a2f3a;
+  --hoyuk-muted: #8a8f98;
+  --hoyuk-text: #e6e8f0;
+  --hoyuk-accent: #5b7bd5;
+  --hoyuk-ink: #0f1115;
+  --hoyuk-label-top: 64px;
+
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--hoyuk-height, 100dvh);
+  overflow: hidden;
+  background: var(--hoyuk-bg);
+  color: var(--hoyuk-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ---------- Kesit ---------- */
+
+.hoyuk-cut {
+  position: relative;
+  height: var(--hoyuk-height, 100dvh);
+  overflow: hidden;
+  background: var(--hoyuk-sky);
+}
+
+.hoyuk-stars {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: calc(100% + 400px);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='390' height='400'%3E%3Cg fill='%238a8f98'%3E%3Ccircle cx='93' cy='45' r='1.1' opacity='.6'/%3E%3Ccircle cx='185' cy='148' r='.7' opacity='.5'/%3E%3Ccircle cx='336' cy='117' r='.8' opacity='.6'/%3E%3Ccircle cx='204' cy='263' r='.6' opacity='.3'/%3E%3Ccircle cx='373' cy='300' r='.6' opacity='.5'/%3E%3Ccircle cx='105' cy='350' r='1.4' opacity='.5'/%3E%3Ccircle cx='359' cy='31' r='1.4' opacity='.6'/%3E%3Ccircle cx='52' cy='229' r='.6' opacity='.3'/%3E%3Ccircle cx='85' cy='183' r='1.3' opacity='.5'/%3E%3Ccircle cx='266' cy='380' r='1.1' opacity='.6'/%3E%3Ccircle cx='262' cy='11' r='1.1' opacity='.6'/%3E%3Ccircle cx='26' cy='77' r='.6' opacity='.4'/%3E%3Ccircle cx='300' cy='174' r='.6' opacity='.5'/%3E%3Ccircle cx='297' cy='230' r='1.1' opacity='.4'/%3E%3Ccircle cx='121' cy='103' r='.6' opacity='.6'/%3E%3Ccircle cx='17' cy='374' r='1.1' opacity='.4'/%3E%3Ccircle cx='147' cy='265' r='.6' opacity='.6'/%3E%3Ccircle cx='247' cy='101' r='1.1' opacity='.4'/%3E%3Ccircle cx='38' cy='150' r='1.1' opacity='.5'/%3E%3Ccircle cx='160' cy='330' r='.8' opacity='.4'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 390px 400px;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.hoyuk-scroller {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  /* Kaydırma çapası kapalı: boyut değişince (iOS adres çubuğu, döndürme) scrollTop = okuma çizgisindeki ofset kalsın. */
+  overflow-anchor: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hoyuk-border) transparent;
+  outline: none;
+}
+
+.hoyuk-scroller:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--hoyuk-accent);
+}
+
+/* Üst ve alt yarım ekran boşluk: okuma çizgisi (ortada) altındaki ofset = scrollTop. */
+.hoyuk-pad {
+  height: 50%;
+}
+
+.hoyuk-strata {
+  position: relative;
+}
+
+.hoyuk-layer {
+  position: relative;
+  box-sizing: border-box;
+  border-top: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.hoyuk-layer--sky {
+  border-top: 1px dashed var(--hoyuk-border);
+}
+
+/* Kurgu dönemler: taramalı doku ("sahne henüz yok"). */
+.hoyuk-layer--kurgu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(135deg, rgb(138 143 152 / 0.06) 0 2px, transparent 2px 14px);
+  pointer-events: none;
+}
+
+/* Okuma çizgisindeki katman 150 ms'de vurgulanır. */
+.hoyuk-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(91 123 213 / 0.08);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+  pointer-events: none;
+}
+
+.hoyuk-layer.is-current::after {
+  opacity: 1;
+}
+
+.hoyuk-layer-label {
+  position: sticky;
+  top: var(--hoyuk-label-top);
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  max-width: calc(100% - 72px);
+  padding: 10px 24px 0;
+  pointer-events: none;
+}
+
+.hoyuk-layer-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #c3c7d0;
+}
+
+.hoyuk-layer.is-current .hoyuk-layer-name {
+  color: var(--hoyuk-text);
+}
+
+.hoyuk-layer-range {
+  font-size: 11px;
+  color: var(--hoyuk-muted);
+}
+
+.hoyuk-badge {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border: 1px dashed var(--hoyuk-muted);
+  border-radius: 999px;
+  color: var(--hoyuk-muted);
+}
+
+.hoyuk-artifact {
+  position: absolute;
+  left: var(--artifact-x, 64%);
+  width: 56px;
+  height: 56px;
+  color: var(--hoyuk-muted);
+  opacity: 0.7;
+  pointer-events: none;
+  view-timeline: --hoyuk-artifact y;
+}
+
+.hoyuk-layer--kurgu .hoyuk-artifact svg {
+  stroke-dasharray: 3 3;
+}
+
+.hoyuk-ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1.2px solid var(--hoyuk-muted);
+  pointer-events: none;
+}
+
+.hoyuk-ground span {
+  position: absolute;
+  left: 24px;
+  bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---------- Sabit katman: okuma çizgisi, hap, etiketler ---------- */
+
+.hoyuk-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hoyuk-fade--top {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 56px;
+  background: linear-gradient(var(--hoyuk-bg), transparent);
+}
+
+.hoyuk-hint {
+  position: absolute;
+  right: 48px;
+  font-size: 11px;
+  color: var(--hoyuk-muted);
+}
+
+.hoyuk-hint--up {
+  top: 14px;
+}
+
+.hoyuk-hint--down {
+  bottom: 16px;
+  display: none;
+}
+
+.hoyuk-scale {
+  position: absolute;
+  top: 34px;
+  right: 48px;
+  font-size: 11px;
+  color: var(--hoyuk-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hoyuk-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0;
+  border-top: 1.5px dashed var(--hoyuk-accent);
+  transform-origin: 50% 50%;
+}
+
+.hoyuk-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -10px;
+  border: 9px solid transparent;
+  border-left: 11px solid var(--hoyuk-accent);
+}
+
+.hoyuk-pill {
+  position: absolute;
+  top: 50%;
+  right: 40px;
+  min-width: 120px;
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: var(--hoyuk-accent);
+  color: var(--hoyuk-ink);
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-50%);
+  will-change: transform, opacity;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
+}
+
+/* ---------- Derinlik göstergesi (sağda; tüm aralık) ---------- */
+
+.hoyuk-gauge {
+  position: absolute;
+  top: 72px;
+  bottom: 248px;
+  right: 0;
+  width: 32px;
+  cursor: pointer;
+  touch-action: none;
+  z-index: 2;
+}
+
+.hoyuk-gauge-track {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 14px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--hoyuk-border);
+}
+
+.hoyuk-gauge-tick {
+  position: absolute;
+  left: -3px;
+  width: 9px;
+  height: 1px;
+  background: var(--hoyuk-muted);
+  opacity: 0.6;
+}
+
+.hoyuk-gauge-label {
+  display: none;
+  position: absolute;
+  right: 14px;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--hoyuk-muted);
+  white-space: nowrap;
+}
+
+.hoyuk-gauge-rail {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.hoyuk-gauge-thumb {
+  position: absolute;
+  top: -5px;
+  left: -4px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--hoyuk-accent);
+}
+
+/* ---------- Panel (mobilde alt sayfa, masaüstünde sağ sütun) ---------- */
+
+.hoyuk-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 48px 16px max(16px, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgb(15 17 21 / 0.95) 40px);
+  box-sizing: border-box;
+}
+
+.hoyuk-summary-year {
+  display: none;
+}
+
+.hoyuk-summary-period {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hoyuk-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--hoyuk-muted);
+}
+
+.hoyuk-note--none {
+  color: #d9b36c;
+}
+
+.hoyuk-section {
+  display: none;
+}
+
+.hoyuk[data-sheet='input'] .hoyuk-section--input,
+.hoyuk[data-sheet='shortcuts'] .hoyuk-section--shortcuts {
+  display: block;
+}
+
+.hoyuk-section-title {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--hoyuk-muted);
+}
+
+.hoyuk-form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.hoyuk-input {
+  flex: 1;
+  min-width: 0;
+  height: 48px;
+  padding: 0 14px;
+  border: 1.5px solid var(--hoyuk-accent);
+  border-radius: 10px;
+  background: var(--hoyuk-bg);
+  color: var(--hoyuk-text);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hoyuk-input[aria-invalid='true'] {
+  border-color: #e0736b;
+}
+
+.hoyuk-era {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--hoyuk-border);
+  border-radius: 10px;
+  background: var(--hoyuk-bg);
+}
+
+.hoyuk-era-btn {
+  min-width: 52px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--hoyuk-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.hoyuk-era-btn[aria-pressed='true'] {
+  background: var(--hoyuk-accent);
+  color: var(--hoyuk-ink);
+  font-weight: 700;
+}
+
+.hoyuk-error {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #f0958e;
+}
+
+.hoyuk-shortcuts,
+.hoyuk-chips-mobile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hoyuk-chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--hoyuk-border);
+  border-radius: 999px;
+  background: var(--hoyuk-panel);
+  color: var(--hoyuk-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hoyuk-chip[aria-pressed='true'] {
+  border-color: var(--hoyuk-accent);
+  background: #1a2236;
+  color: var(--hoyuk-text);
+}
+
+.hoyuk-chip[aria-expanded='true'] {
+  color: var(--hoyuk-text);
+}
+
+.hoyuk-confirm {
+  height: 52px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--hoyuk-accent);
+  color: var(--hoyuk-ink);
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hoyuk-confirm:focus-visible,
+.hoyuk-chip:focus-visible,
+.hoyuk-era-btn:focus-visible,
+.hoyuk-input:focus-visible {
+  outline: 2px solid var(--hoyuk-text);
+  outline-offset: 2px;
+}
+
+.hoyuk-keys {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--hoyuk-muted);
+}
+
+/* ---------- Masaüstü (≥900 px): sağ panel ---------- */
+
+@media (min-width: 900px) {
+  .hoyuk {
+    grid-template-columns: minmax(0, 1fr) 440px;
+    --hoyuk-label-top: 24px;
+  }
+
+  .hoyuk-layer-label {
+    padding-left: 32px;
+  }
+
+  .hoyuk-hint--down {
+    display: block;
+  }
+
+  .hoyuk-gauge {
+    top: 48px;
+    bottom: 48px;
+    width: 120px;
+  }
+
+  .hoyuk-gauge-label {
+    display: block;
+  }
+
+  .hoyuk-hint,
+  .hoyuk-scale {
+    right: 136px;
+  }
+
+  .hoyuk-pill {
+    right: 136px;
+    min-width: 150px;
+    font-size: 26px;
+  }
+
+  .hoyuk-panel {
+    position: static;
+    gap: 24px;
+    padding: 48px 40px;
+    background: var(--hoyuk-panel);
+    overflow-y: auto;
+  }
+
+  .hoyuk-summary-year {
+    display: block;
+    font-size: 72px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hoyuk-summary-period {
+    margin-top: 12px;
+    font-size: 18px;
+  }
+
+  .hoyuk-note {
+    margin-top: 12px;
+    font-size: 14px;
+  }
+
+  .hoyuk-section,
+  .hoyuk-keys {
+    display: block;
+  }
+
+  .hoyuk-chips-mobile {
+    display: none;
+  }
+
+  .hoyuk-confirm {
+    height: 56px;
+    font-size: 18px;
+  }
+}
+
+/* ---------- Giriş animasyonu (≤1,2 sn; herhangi bir girdiyle atlanır) ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .hoyuk[data-intro='play'] .hoyuk-line {
+    animation: hoyuk-line-draw 600ms ease-out both;
+  }
+
+  .hoyuk[data-intro='play'] .hoyuk-layer {
+    animation: hoyuk-layer-rise 400ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: var(--intro-delay, 0ms);
+  }
+
+  .hoyuk[data-intro='play'] .hoyuk-pill {
+    animation: hoyuk-pill-in 250ms ease-out 600ms both;
+  }
+
+  /* Eser paralaksı (1,08×): scroll-driven; desteklenmezse JS (IntersectionObserver + rAF) yedeği. */
+  @supports (animation-timeline: view()) {
+    .hoyuk-artifact svg {
+      animation: hoyuk-artifact-parallax linear both;
+      animation-timeline: --hoyuk-artifact;
+      animation-range: cover 0% cover 100%;
+    }
+  }
+}
+
+@keyframes hoyuk-line-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes hoyuk-layer-rise {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes hoyuk-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+/* Öğe ekranı baştan sona geçerken (≈100dvh + 56px) fazladan %8 yol alır. */
+@keyframes hoyuk-artifact-parallax {
+  from {
+    transform: translateY(calc(4dvh + 2px));
+  }
+  to {
+    transform: translateY(calc(-4dvh - 2px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoyuk *,
+  .hoyuk *::before,
+  .hoyuk *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
