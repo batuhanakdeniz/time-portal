@@ -16,9 +16,3 @@ export const TURKEY_MAX_BOUNDS: [[number, number], [number, number]] = [
   [TURKEY_BOUNDS[0][0] - LNG_MARGIN, TURKEY_BOUNDS[0][1] - LAT_MARGIN],
   [TURKEY_BOUNDS[1][0] + LNG_MARGIN, TURKEY_BOUNDS[1][1] + LAT_MARGIN],
 ]
-
-export function isInTurkeyBounds(lat: number, lon: number): boolean {
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false
-  const [[west, south], [east, north]] = TURKEY_BOUNDS
-  return lat >= south && lat <= north && lon >= west && lon <= east
-}
