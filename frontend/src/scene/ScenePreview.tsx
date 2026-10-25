@@ -7,7 +7,7 @@ interface Props {
 
 type LoadState = 'loading' | 'loaded' | 'error'
 
-/** Panorama önizlemesi. #4 gelince 360° görüntüleyici bu bileşenin yerine geçer. */
+/** Düz görsel önizlemesi: WebGL yoksa (`PanoramaViewer`) ya da görüntüleyici parçası yüklenemezse (`ViewerSection`) yedek. */
 export function ScenePreview({ src, caption }: Props) {
   // key={src} ile adres değişince yükleme durumu sıfırlanır
   return <PreviewImage key={src} src={src} caption={caption} />
