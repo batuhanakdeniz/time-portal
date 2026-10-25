@@ -14,3 +14,18 @@ export function failedMessage(serverError: string | null): string {
 export function badRequestMessage(serverError: string): string {
   return serverError === 'location outside supported area' ? TURKEY_ONLY_MESSAGE : BAD_REQUEST_MESSAGE
 }
+
+export const NOT_FOUND_MESSAGE = 'Sahne artık bulunamıyor. Tekrar oluştur.'
+export const BUSY_MESSAGE = 'Şu anda çok fazla sahne üretiliyor. Birazdan tekrar dene.'
+
+/**
+ * HTTP hata durumları → Türkçe mesaj; sunucunun `error` metni hiçbir yolda gösterilmez.
+ * 4xx/5xx dışındaki durumlar (ör. 200 + geçersiz gövde) istemcinin kendi Türkçe mesajını taşır.
+ */
+export function apiErrorMessage(status: number, clientMessage: string): string {
+  if (status < 400) return clientMessage
+  if (status === 400) return badRequestMessage(clientMessage)
+  if (status === 404) return NOT_FOUND_MESSAGE
+  if (status === 503) return BUSY_MESSAGE
+  return GENERATION_FAILED_MESSAGE
+}

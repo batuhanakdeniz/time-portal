@@ -22,7 +22,8 @@ export function yearNote(year: number): string {
 export function safeHttpsUrl(url: string | null | undefined): string | null {
   if (!url) return null
   try {
-    return new URL(url).protocol === 'https:' ? url : null
+    const u = new URL(url)
+    return u.protocol === 'https:' && u.hostname !== '' ? u.href : null
   } catch {
     return null
   }

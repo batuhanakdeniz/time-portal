@@ -13,8 +13,8 @@ vi.mock('./location/LocationPicker', () => ({
 
 // three/WebGL jsdom'da yok; görüntüleyicinin kendisi ViewerSection testlerinde sınanır.
 vi.mock('./scene/ViewerSection', () => ({
-  ViewerSection: ({ src, alt }: { src: string; alt: string }) => (
-    <figure data-testid="viewer">
+  ViewerSection: ({ src, alt, kind, depthUrl }: { src: string; alt: string; kind?: string; depthUrl?: string }) => (
+    <figure data-testid="viewer" data-kind={kind ?? ''} data-depth={depthUrl ?? ''}>
       <img src={src} alt={alt} />
     </figure>
   ),
@@ -43,6 +43,7 @@ afterEach(() => {
 async function pickRome() {
   fireEvent.click(await screen.findByRole('button', { name: 'Roma seç' }))
 }
+const status = () => screen.queryByRole('status') ?? screen.getByRole('alert')
 const generate = () => screen.getByRole('button', { name: 'Sahne oluştur' })
 const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 
@@ -68,15 +69,15 @@ describe('App', () => {
     render(<App />)
     await pickRome()
     fireEvent.click(generate())
-    expect(screen.getByRole('status')).toHaveTextContent('Gönderiliyor…')
+    expect(status()).toHaveTextContent('Gönderiliyor…')
     expect(generate()).toBeDisabled()
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sırada…')
+    expect(status()).toHaveTextContent('Sırada…')
     await tick(1000)
-    expect(screen.getByRole('status')).toHaveTextContent('Üretiliyor…')
+    expect(status()).toHaveTextContent('Üretiliyor…')
     expect(generate()).toBeDisabled()
     await tick(1000)
-    expect(screen.getByRole('status')).toHaveTextContent('Sahne hazır')
+    expect(status()).toHaveTextContent('Sahne hazır')
     expect(generate()).toBeEnabled()
 
     const img = screen.getByRole('img', { name: 'Üretilen panorama: 2026, 41.9000° K, 12.5000° D' })
@@ -91,7 +92,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sahne hazır')
+    expect(status()).toHaveTextContent('Sahne hazır')
     fireEvent.click(screen.getByRole('button', { name: 'Sidney seç' }))
     expect(screen.getByRole('img', { name: 'Üretilen panorama: 2026, 41.9000° K, 12.5000° D' })).toBeInTheDocument()
     expect(screen.getByText('2026 · 33.8688° G, 151.2093° D')).toBeInTheDocument()
@@ -106,7 +107,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sahne üretilemedi. Biraz sonra tekrar dene.')
+    expect(status()).toHaveTextContent('Sahne üretilemedi. Biraz sonra tekrar dene.')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(generate()).toBeEnabled()
   })
@@ -117,7 +118,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('İstek geçersiz.')
+    expect(status()).toHaveTextContent('İstek geçersiz.')
     expect(generate()).toBeEnabled()
   })
 
@@ -127,7 +128,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sunucuya ulaşılamadı')
+    expect(status()).toHaveTextContent('Sunucuya ulaşılamadı')
   })
 
   it('READY ama sonuç yoksa geçersiz sonuç mesajı gösterir', async () => {
@@ -136,7 +137,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sunucu geçersiz sonuç döndü')
+    expect(status()).toHaveTextContent('Sunucu geçersiz sonuç döndü')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
@@ -146,7 +147,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sunucudan geçersiz yanıt')
+    expect(status()).toHaveTextContent('Sunucudan geçersiz yanıt')
   })
 
   it('2xx ama JSON olmayan yanıt "ulaşılamadı" değil geçersiz yanıt der', async () => {
@@ -155,7 +156,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sunucudan geçersiz yanıt')
+    expect(status()).toHaveTextContent('Sunucudan geçersiz yanıt')
   })
 
   it('beklenmeyen hata genel mesaj verir', async () => {
@@ -164,7 +165,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Beklenmeyen bir hata oluştu')
+    expect(status()).toHaveTextContent('Beklenmeyen bir hata oluştu')
   })
 
   it('yoklama sırasında ağ hatası da "Sunucuya ulaşılamadı" gösterir', async () => {
@@ -173,7 +174,7 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Sunucuya ulaşılamadı')
+    expect(status()).toHaveTextContent('Sunucuya ulaşılamadı')
   })
 
   it('üretim sürerken düğme pasiftir, ikinci tıklama yeni istek başlatmaz ve yoklama sürer', async () => {
@@ -262,6 +263,42 @@ describe('App', () => {
     it('kind photo → ViewerSection kind="photo" ve depthUrl alır', async () => {
       await run(withResult({ kind: 'photo' }))
       expect(screen.getByRole('img', { name: /^Üretilen fotoğraf:/ })).toBeInTheDocument()
+      const viewer = screen.getByTestId('viewer')
+      expect(viewer).toHaveAttribute('data-kind', 'photo')
+      expect(viewer).toHaveAttribute('data-depth', '/d.png')
+    })
+
+    it('kind yoksa görüntüleyiciye photo geçilmez (panorama)', async () => {
+      await run(withResult({}))
+      expect(screen.getByTestId('viewer')).toHaveAttribute('data-kind', 'panorama')
+    })
+
+    it('hata durumunda mesaj role="alert", diğer durumlarda status', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ error: 'x' }, 500)))
+      render(<App />)
+      expect(screen.getByRole('status')).toBeInTheDocument()
+      await pickRome()
+      fireEvent.click(generate())
+      await tick(0)
+      expect(screen.getByRole('alert')).toHaveTextContent('Sahne üretilemedi. Biraz sonra tekrar dene.')
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
+
+    it.each([
+      [404, 'Sahne artık bulunamıyor. Tekrar oluştur.'],
+      [503, 'Şu anda çok fazla sahne üretiliyor. Birazdan tekrar dene.'],
+      [500, 'Sahne üretilemedi. Biraz sonra tekrar dene.'],
+    ])('yoklamada HTTP %i → Türkçe mesaj, sunucu metni yok', async (code, text) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValueOnce(json(scene('PENDING'), 202)).mockResolvedValueOnce(json({ error: 'scene not found upstream' }, code)),
+      )
+      render(<App />)
+      await pickRome()
+      fireEvent.click(generate())
+      await tick(0)
+      expect(status()).toHaveTextContent(text)
+      expect(screen.queryByText(/not found|upstream/)).not.toBeInTheDocument()
     })
 
     it('POST 400 Türkiye dışı → Türkçe mesaj, İngilizce metin yok', async () => {
@@ -270,19 +307,19 @@ describe('App', () => {
       await pickRome()
       fireEvent.click(generate())
       await tick(0)
-      expect(screen.getByRole('status')).toHaveTextContent("Şimdilik yalnızca Türkiye'deki konumlar destekleniyor.")
+      expect(status()).toHaveTextContent("Şimdilik yalnızca Türkiye'deki konumlar destekleniyor.")
       expect(screen.queryByText(/outside supported area/)).not.toBeInTheDocument()
     })
 
     it('FAILED no image found → görsel bulunamadı mesajı', async () => {
       await run(scene('FAILED', { error: 'no image found for location' }))
-      expect(screen.getByRole('status')).toHaveTextContent('Bu konum için açık lisanslı bir görsel bulunamadı. Yakındaki başka bir noktayı dene.')
+      expect(status()).toHaveTextContent('Bu konum için açık lisanslı bir görsel bulunamadı. Yakındaki başka bir noktayı dene.')
       expect(screen.queryByText(/no image found/)).not.toBeInTheDocument()
     })
 
     it('FAILED bilinmeyen metin → genel mesaj, ham metin gösterilmez', async () => {
       await run(scene('FAILED', { error: 'boom internal' }))
-      expect(screen.getByRole('status')).toHaveTextContent('Sahne üretilemedi. Biraz sonra tekrar dene.')
+      expect(status()).toHaveTextContent('Sahne üretilemedi. Biraz sonra tekrar dene.')
       expect(screen.queryByText(/boom internal/)).not.toBeInTheDocument()
     })
 
@@ -296,7 +333,7 @@ describe('App', () => {
       fireEvent.click(generate())
       await tick(0)
       await tick(1000)
-      expect(screen.getByRole('status')).toHaveTextContent('Üretiliyor… İlk sahne 30 saniyeyi bulabilir.')
+      expect(status()).toHaveTextContent('Üretiliyor… İlk sahne 30 saniyeyi bulabilir.')
     })
   })
 })

@@ -20,7 +20,7 @@ describe('Attribution', () => {
     expect(lic).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
     expect(lic).toHaveAttribute('target', '_blank')
     expect(lic).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(screen.getByRole('link', { name: 'Mapillary' })).toHaveAttribute('href', 'https://www.mapillary.com')
+    expect(screen.getByRole('link', { name: 'Mapillary' })).toHaveAttribute('href', 'https://www.mapillary.com/')
   })
 
   it('Commons: kaynak sayfası bağlantı olur', () => {
@@ -57,7 +57,7 @@ describe('Attribution', () => {
   })
 
   it('footer öğesi olarak çizilir', () => {
-    render(<Attribution attribution={base} />)
-    expect(screen.getByRole('contentinfo')).toBeInTheDocument()
+    const { container } = render(<Attribution attribution={base} />)
+    expect(container.querySelector('footer.attribution')).toBeInTheDocument()
   })
 })

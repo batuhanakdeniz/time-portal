@@ -6,7 +6,7 @@ import { MapSection } from './location/MapSection'
 import { ViewerSection } from './scene/ViewerSection'
 import { Attribution } from './scene/Attribution'
 import { placeTitle, yearNote } from './scene/resultInfo'
-import { badRequestMessage, failedMessage } from './api/errorMessages'
+import { apiErrorMessage, failedMessage } from './api/errorMessages'
 import { ApiError, createScene, isAbortError, SceneTimeoutError, waitForScene, type SceneResult, type SceneStatus } from './api/scenes'
 import './App.css'
 
@@ -49,7 +49,7 @@ function phaseText(phase: Phase): string {
 }
 
 function errorMessage(e: unknown): string {
-  if (e instanceof ApiError) return e.status === 400 ? badRequestMessage(e.message) : e.message
+  if (e instanceof ApiError) return apiErrorMessage(e.status, e.message)
   if (e instanceof SceneTimeoutError) return 'Üretim çok uzun sürdü, lütfen tekrar dene'
   if (e instanceof TypeError) return 'Sunucuya ulaşılamadı'
   return 'Beklenmeyen bir hata oluştu'
@@ -128,7 +128,7 @@ export default function App() {
         <button type="button" className="generate" disabled={!location || busy} onClick={() => void generate()}>
           Sahne oluştur
         </button>
-        <p className={`status status-${phase.kind}`} role="status">
+        <p className={`status status-${phase.kind}`} role={phase.kind === 'error' ? 'alert' : 'status'}>
           {phaseText(phase)}
           {phase.kind === 'progress' && phase.status === 'RUNNING' && <span className="status-hint"> İlk sahne 30 saniyeyi bulabilir.</span>}
         </p>
