@@ -409,14 +409,35 @@ describe('App: sahne sayfası', () => {
     await tick(1000)
     expect(loader()).not.toBeInTheDocument()
     expect(screen.getByTestId('viewer')).toBeInTheDocument()
+    // Yükleme ekranından geçildi: daire açılışı; animasyon bitmese de en geç 800 ms'de sınıf kalkar.
+    expect(screen.getByTestId('scene-stage')).toHaveClass('scene-stage--reveal')
+    fireEvent(screen.getByTestId('viewer'), new Event('animationend', { bubbles: true })) // iç öğeden kabarcıklanan olay sayılmaz
+    expect(screen.getByTestId('scene-stage')).toHaveClass('scene-stage--reveal')
+    await tick(800)
+    expect(screen.getByTestId('scene-stage')).not.toHaveClass('scene-stage--reveal')
+  })
+
+  it('açılış animasyonu bitince kırpma sınıfı kalkar', async () => {
+    stubFetch(sequence(() => json(scene('PENDING'), 202), () => json(scene('RUNNING')), () => json(readyScene())))
+    await openBeyogluScene()
+    await tick(300) // yükleme ekranı görünür
+    expect(loader()).toBeInTheDocument()
+    await tick(700)
+    const stage = screen.getByTestId('scene-stage')
+    expect(stage).toHaveClass('scene-stage--reveal')
+    fireEvent(stage, new Event('animationend', { bubbles: true }))
+    expect(stage).not.toHaveClass('scene-stage--reveal')
   })
 
   it('önbellekteki sahne (ilk yoklamada READY) yükleme ekranını hiç göstermez', async () => {
     stubFetch(sequence(() => json(scene('PENDING'), 202), () => json(readyScene())))
     await openBeyogluScene()
     expect(screen.getByTestId('viewer')).toBeInTheDocument()
+    // Doğrudan READY: açılış animasyonu yok, görüntüleyici hiç kırpılmaz.
+    expect(screen.getByTestId('scene-stage')).not.toHaveClass('scene-stage--reveal')
     await tick(400)
     expect(loader()).not.toBeInTheDocument()
+    expect(screen.getByTestId('scene-stage')).not.toHaveClass('scene-stage--reveal')
   })
 
   it('READY: tam ekran görüntüleyici + katmanlar (yer, yıl/dönem notu, rozet, atıf); görüntüleyicinin tam ekran düğmesi kapalı', async () => {
@@ -581,7 +602,10 @@ describe('App: sahne sayfası', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Sunucu meşgul, 4 sn sonra yeniden denenecek')
     await tick(1000)
     expect(screen.getByRole('alert')).toHaveTextContent('Sunucu meşgul, 3 sn sonra yeniden denenecek')
-    await tick(3000)
+    await tick(2900)
+    // Son saniyede de süre gösterilir; süresiz "Sunucu meşgul" yalnızca denemeler bitince.
+    expect(screen.getByRole('alert')).toHaveTextContent('Sunucu meşgul, 1 sn sonra yeniden denenecek')
+    await tick(100)
     expect(posts(fetchMock)).toHaveLength(2)
     expect(screen.getByTestId('viewer')).toBeInTheDocument()
   })
@@ -690,6 +714,7 @@ describe('App: sahne derin bağlantısı', () => {
     renderAt('/yil/1453/yer/34-beyoglu/sahne')
     await waitFor(() => expect(screen.getByTestId('viewer')).toBeInTheDocument())
     expect(postBody(fetchMock)).toEqual(BEYOGLU_BODY)
+    expect(screen.getByTestId('scene-stage')).not.toHaveClass('scene-stage--reveal')
     fireEvent.click(screen.getByRole('button', { name: 'Haritaya dön' }))
     expect(url()).toBe('/yil/1453/yer/34-beyoglu')
     browserBack() // replace edildiyse geride sahne kalmamıştır

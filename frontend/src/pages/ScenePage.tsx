@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router'
 import { formatYear } from '../lib/year'
 import type { PlaceSelection } from '../location/place'
@@ -22,7 +22,8 @@ type Phase =
   | { kind: 'loading'; stage: SceneStage | null }
   /** Sunucu meşgul (503); istemci `until` anında kendiliğinden yeniden dener. */
   | { kind: 'busy'; until: number }
-  | { kind: 'ready'; result: SceneResult }
+  /** reveal: yükleme/meşgul ekranı görüldüyse görüntüleyici daire açılışıyla gelir (önbellekten anında gelende değil). */
+  | { kind: 'ready'; result: SceneResult; reveal: boolean }
   | { kind: 'error'; error: SceneErrorKind }
 
 /** `/yil/:yil/yer/:yer/sahne`: tam ekran sahne (yükleme → görüntüleyici + katmanlar, ya da hata). */
@@ -81,7 +82,10 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
   const [showLoader, setShowLoader] = useState(false)
   const [elapsedMs, setElapsedMs] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  const startedAt = useRef(Date.now())
+  // Sahne isteğinin başladığı an (yer verisi beklenirken null: süre 0 kalır).
+  const startedAt = useRef<number | null>(null)
+  // Yükleme ya da meşgul ekranı gerçekten göründü mü?
+  const coveredRef = useRef(false)
   const controllerRef = useRef<AbortController | null>(null)
   const lat = selection?.center.lat
   const lon = selection?.center.lon
@@ -92,6 +96,8 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
     const controller = new AbortController()
     controllerRef.current = controller
     const { signal } = controller
+    startedAt.current = Date.now()
+    setElapsedMs(0)
     setPhase({ kind: 'loading', stage: null })
     try {
       // İstek tıklanan nokta yerine ilçe (ya da il) merkeziyle gider: aynı yer her zaman aynı istek, önbellek isabeti.
@@ -113,7 +119,7 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
         },
       )
       if (signal.aborted) return
-      if (done.status === 'READY' && done.result) setPhase({ kind: 'ready', result: done.result })
+      if (done.status === 'READY' && done.result) setPhase({ kind: 'ready', result: done.result, reveal: coveredRef.current })
       else if (done.status === 'READY') setPhase({ kind: 'error', error: 'unknown' })
       else setPhase({ kind: 'error', error: failedKind(done.error) })
     } catch (e) {
@@ -149,16 +155,18 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
     const tick = () => {
       const t = Date.now()
       setNow(t)
-      setElapsedMs(t - startedAt.current)
+      setElapsedMs(startedAt.current === null ? 0 : t - startedAt.current)
     }
     tick()
     const id = setInterval(tick, ELAPSED_TICK_MS)
     return () => clearInterval(id)
   }, [loading])
 
+  useEffect(() => {
+    if ((phase.kind === 'loading' && showLoader) || phase.kind === 'busy') coveredRef.current = true
+  }, [phase, showLoader])
+
   const retry = () => {
-    startedAt.current = Date.now()
-    setElapsedMs(0)
     setShowLoader(true)
     void generate()
   }
@@ -170,7 +178,9 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
 
   if (phase.kind === 'busy') {
     // Otomatik yeniden deneme sürüyor: geri sayım; "Tekrar dene" beklemeden hemen dener.
-    const retryAfterSec = Math.max(0, Math.ceil((phase.until - now) / 1000))
+    // Geri sayım `until`'e göre; yeniden deneme isteği sürerken de en az 1 sn gösterilir
+    // (0 olursa başlık süresiz "Sunucu meşgul"e döner, bu yalnızca denemeler bitince doğru).
+    const retryAfterSec = Math.max(1, Math.ceil((phase.until - now) / 1000))
     return <SceneError kind="busy" retryAfterSec={retryAfterSec} onRetry={retry} onBack={onBack} />
   }
 
@@ -219,7 +229,7 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
   const shareUrl = scenePath(year, placeSlug)
   return (
     <div className="scene-page">
-      <div className="scene-stage" data-testid="scene-stage">
+      <ViewerStage reveal={phase.reveal}>
         <ViewerSection
           src={result.panoramaUrl}
           depthUrl={result.depthUrl}
@@ -227,7 +237,7 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
           alt={`Üretilen ${kind === 'photo' ? 'fotoğraf' : 'panorama'}: ${formatYear(year)}, ${placeName}`}
           showFullscreenButton={false}
         />
-      </div>
+      </ViewerStage>
       <SceneOverlay
         year={year}
         place={{ province: place.province, district: place.district?.name }}
@@ -240,6 +250,38 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
         onEditPlace={onBack}
         shareUrl={shareUrl}
       />
+    </div>
+  )
+}
+
+/** Açılış animasyonu süresi (CSS `scene-reveal`, 600 ms) + pay; animationend gelmezse sınıf yine kalkar. */
+export const REVEAL_FALLBACK_MS = 800
+
+/**
+ * Görüntüleyici kabı. `reveal` ise merkezden açılan daireyle gelir (`scene-stage--reveal`); sınıf animasyon
+ * bitince ya da en geç REVEAL_FALLBACK_MS sonra kaldırılır. Böylece animasyon çalışmasa (arka plan sekmesi,
+ * durdurulmuş animasyonlar) da görüntüleyici kalıcı olarak kırpılmış kalmaz.
+ */
+function ViewerStage({ reveal, children }: { reveal: boolean; children: ReactNode }) {
+  const [revealing, setRevealing] = useState(reveal)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!revealing || !el) return
+    const t = setTimeout(() => setRevealing(false), REVEAL_FALLBACK_MS)
+    // Yerel dinleyici: içteki öğelerin (görüntüleyici) kabarcıklanan animasyon olayları sayılmaz.
+    const onEnd = (e: Event) => {
+      if (e.target === el) setRevealing(false)
+    }
+    el.addEventListener('animationend', onEnd)
+    return () => {
+      clearTimeout(t)
+      el.removeEventListener('animationend', onEnd)
+    }
+  }, [revealing])
+  return (
+    <div ref={ref} className={`scene-stage${revealing ? ' scene-stage--reveal' : ''}`} data-testid="scene-stage">
+      {children}
     </div>
   )
 }

@@ -127,22 +127,17 @@ a.yil-rozeti:focus-visible {
   view-transition-name: yil-rozeti;
 }
 
-/* --- Harita: mobilde arama öne, masaüstünde sağ panel --- */
+/* --- Harita: tam ekran (100dvh). Mobilde arama öne, harita kalan alanı doldurur; masaüstünde sağ panel --- */
 
 .page-map {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    'bar'
-    'notice'
-    'search'
-    'map'
-    'sheet';
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   box-sizing: border-box;
+  height: 100dvh;
   max-width: 1280px;
   margin: 0 auto;
-  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
 }
 
 .map-bar {
@@ -150,6 +145,7 @@ a.yil-rozeti:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: none;
 }
 
 .map-heading h2 {
@@ -165,35 +161,48 @@ a.yil-rozeti:focus-visible {
 
 .page-map .route-notice {
   grid-area: notice;
+  flex: none;
 }
 
 .map-search {
   grid-area: search;
+  flex: none;
   position: relative;
   z-index: 3; /* sonuç listesi haritanın üstünde açılır */
 }
 
+/* Harita kabı kalan yüksekliği doldurur; MapLibre kap boyutunu ResizeObserver ile izler. */
 .map-canvas {
   grid-area: map;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-map .turkey-map {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-map .turkey-map-canvas {
-  height: min(52dvh, 480px);
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
 }
 
 .map-sheet {
   grid-area: sheet;
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin: 0 calc(-1 * max(16px, env(safe-area-inset-right))) 0 calc(-1 * max(16px, env(safe-area-inset-left)));
-  padding: 14px max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: #12152199;
-  backdrop-filter: blur(8px);
+  padding: 12px max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: #121521;
   border-top: 1px solid #2c3250;
   border-radius: 14px 14px 0 0;
 }
@@ -206,27 +215,28 @@ a.yil-rozeti:focus-visible {
 
 @media (min-width: 900px) {
   .page-map {
+    display: grid;
     grid-template-columns: minmax(0, 1fr) 360px;
-    grid-template-rows: auto auto auto 1fr;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     grid-template-areas:
       'bar bar'
       'notice notice'
       'map search'
       'map sheet';
     column-gap: 20px;
-    padding-bottom: 24px;
+    row-gap: 12px;
+    padding-bottom: 20px;
   }
 
-  .page-map .turkey-map-canvas {
-    height: min(78dvh, 720px);
+  /* Harita kalan alanı doldurur; çok kısa pencerede en az 480 px (sayfa kayar). */
+  .map-canvas {
+    min-height: 480px;
   }
 
   .map-sheet {
-    position: static;
     align-self: start;
     margin: 0;
     padding: 16px;
-    background: #121521;
     border: 1px solid #2c3250;
     border-radius: 12px;
   }
@@ -245,8 +255,12 @@ a.yil-rozeti:focus-visible {
 .scene-stage {
   position: absolute;
   inset: 0;
-  /* Yükleme → görüntüleyici: merkezden açılan daire (600 ms, ease-out). */
-  animation: scene-reveal 600ms ease-out both;
+}
+
+/* Yükleme → görüntüleyici: merkezden açılan daire (600 ms, ease-out). Sınıf yalnızca yükleme ekranı
+   görüldüyse eklenir ve animasyon bitince (en geç 800 ms) kaldırılır; dolgu modu yok, kalıcı kırpma kalmaz. */
+.scene-stage--reveal {
+  animation: scene-reveal 600ms ease-out;
 }
 
 @keyframes scene-reveal {
@@ -254,7 +268,7 @@ a.yil-rozeti:focus-visible {
     clip-path: circle(0% at 50% 50%);
   }
   to {
-    clip-path: circle(75% at 50% 50%);
+    clip-path: circle(150% at 50% 50%);
   }
 }
 
@@ -382,7 +396,7 @@ a.yil-rozeti:focus-visible {
   }
 
   /* Daire açılışı yerine 150 ms soldurma. */
-  .scene-stage {
-    animation: scene-fade 150ms ease-out both;
+  .scene-stage--reveal {
+    animation: scene-fade 150ms ease-out;
   }
 }
