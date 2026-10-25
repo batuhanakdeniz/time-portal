@@ -11,7 +11,9 @@ import {
   DEFAULT_PHOTO_VIEW,
   DEPTH_CLIP_HIGH,
   DEPTH_CLIP_LOW,
+  DEPTH_MIN_RANGE,
   DEPTH_SCALE,
+  EDGE_MARGIN,
   edgeAttenuation,
   effectiveRotation,
   GRID_DESKTOP_COLS,
@@ -336,8 +338,33 @@ describe('normalizeDepth (5–95 yüzdelik kırpma)', () => {
     expect(out.every((x) => x >= 0 && x <= 255)).toBe(true)
   })
 
-  it('düz harita (aralık yok) ve bozuk değerler güvenle işlenir', () => {
-    expect(Array.from(normalizeDepth([200, 200, 200]))).toEqual([200, 200, 200])
+  it('yüzdelikler sıralı dizideki gerçek konumdan alınır: 0..99da p5=5 → 0, p95=95 → 255, 50 → 127,5', () => {
+    const values = Array.from({ length: 100 }, (_, i) => i)
+    const out = normalizeDepth(values)
+    expect(out[5]).toBe(0)
+    expect(out[4]).toBe(0)
+    expect(out[95]).toBe(255)
+    expect(out[99]).toBe(255)
+    expect(out[50]).toBeCloseTo(127.5, 4)
+    expect(out[6]).toBeGreaterThan(0)
+    expect(out[94]).toBeLessThan(255)
+  })
+
+  it('neredeyse düz haritada kazanç sınırlı: aralık DEPTH_MIN_RANGEden darsa gürültü tam aralığa yayılmaz', () => {
+    expect(DEPTH_MIN_RANGE).toBe(24)
+    const r = rng(3)
+    const noisy = Array.from({ length: 400 }, () => 120 + Math.floor(r() * 11)) // 120..130: 10 gri düzeyi
+    const out = normalizeDepth(noisy)
+    const max = Math.max(...out)
+    expect(max).toBeLessThanOrEqual((255 * 10) / DEPTH_MIN_RANGE + 1e-3)
+    expect(max).toBeGreaterThan(50) // gerçek kabartma yine görünür
+    // Aralık DEPTH_MIN_RANGE ve üstündeyse tam [0,255] kullanılır.
+    const wide = Array.from({ length: 400 }, (_, i) => 100 + (i % 40))
+    expect(Math.max(...normalizeDepth(wide))).toBe(255)
+  })
+
+  it('düz harita (aralık yok) kabartmasız olur, bozuk değerler güvenle işlenir', () => {
+    expect(Array.from(normalizeDepth([200, 200, 200]))).toEqual([0, 0, 0])
     const out = normalizeDepth([NaN, Infinity, -5, 999, 128])
     expect(out.every((x) => Number.isFinite(x) && x >= 0 && x <= 255)).toBe(true)
     expect(normalizeDepth([]).length).toBe(0)
@@ -382,6 +409,16 @@ describe('limitDepthSlope (eğim sınırı)', () => {
     expect(out[15 * w + 8]).toBe(4)
   })
 
+  it('idempotent: ikinci uygulama sonucu değiştirmez', () => {
+    const cols = 30
+    const rows = 20
+    const r = rng(9)
+    const z = Array.from({ length: (cols + 1) * (rows + 1) }, () => r() * 0.45)
+    const once = limitDepthSlope(z, cols, rows, 0.02)
+    const twice = limitDepthSlope(once, cols, rows, 0.02)
+    expect(Array.from(twice)).toEqual(Array.from(once))
+  })
+
   it('kenarda 0 olan köşeler 0 kalır; negatif/bozuk adım düzleştirir ama çökmez', () => {
     const cols = 6
     const rows = 4
@@ -412,15 +449,52 @@ describe('buildDepthOffsets (görüntüleyici hattı)', () => {
     expect(stretchCells).toBeLessThan(0.27)
   })
 
-  it('eğim sınırı en-boy oranı ve ızgaraya (mobil/masaüstü) göre ölçeklenir', () => {
+  it('eğim sınırı en-boy oranı ve ızgaraya göre ölçeklenir; kenar bandında yalnızca sönümleme rampası kadar gevşer', () => {
     for (const aspect of [1, 4 / 3, 16 / 9, 2]) {
       for (const mobile of [false, true]) {
         const { cols, rows } = chooseGridSize(aspect, mobile)
         const cell = Math.min((2 * aspect) / cols, 2 / rows)
-        const out = buildDepthOffsets(railing(cols, rows), cols, rows, aspect)
-        expect(maxNeighborDiff(out, cols, rows).axis).toBeLessThanOrEqual(cell * MAX_DEPTH_SLOPE + 1e-6)
+        // Sol %10 uzak, gerisi yakın + korkuluk: hem süreksizlik hem kenar bandına dayanan büyük yakın bölge.
+        const w = cols + 1
+        const depth = railing(cols, rows).map((v, k) => ((k % w) < cols * 0.1 ? 0 : k % 7 === 0 ? v : 255))
+        const out = buildDepthOffsets(depth, cols, rows, aspect)
+        const inBand = (i: number, j: number) =>
+          Math.min(i / cols, 1 - i / cols) < EDGE_MARGIN || Math.min(j / rows, 1 - j / rows) < EDGE_MARGIN
+        // smoothstep türevi en fazla 1,5 → bir köşe adımında sönümleme en fazla 1,5/(EDGE_MARGIN·min(cols,rows)) değişir.
+        const bandBound = cell * MAX_DEPTH_SLOPE + (DEPTH_SCALE * 1.5) / (EDGE_MARGIN * Math.min(cols, rows))
+        let interior = 0
+        let band = 0
+        for (let j = 0; j <= rows; j++) {
+          for (let i = 0; i <= cols; i++) {
+            const idx = j * w + i
+            for (const [n, ni, nj] of [[idx + 1, i + 1, j], [idx + w, i, j + 1]] as const) {
+              if (ni > cols || nj > rows) continue
+              const d = Math.abs(out[n] - out[idx])
+              if (inBand(i, j) || inBand(ni, nj)) band = Math.max(band, d)
+              else interior = Math.max(interior, d)
+            }
+          }
+        }
+        expect(interior).toBeLessThanOrEqual(cell * MAX_DEPTH_SLOPE + 1e-6)
+        expect(band).toBeLessThanOrEqual(bandBound + 1e-6)
       }
     }
+  })
+
+  it('kenar sönümlemesi aşındırmadan sonra: tam derinliğe kenar bandı içinde ulaşılır (rampa içeri yayılmaz)', () => {
+    const aspect = 4 / 3
+    const { cols, rows } = chooseGridSize(aspect, false)
+    const w = cols + 1
+    const depth: number[] = []
+    for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) depth.push(i < cols * 0.1 ? 0 : 255)
+    const out = buildDepthOffsets(depth, cols, rows, aspect)
+    const mid = Math.round(cols / 2)
+    let reach = -1
+    for (let j = 0; j <= rows && reach < 0; j++) if (out[j * w + mid] >= 0.99 * DEPTH_SCALE) reach = j
+    expect(reach).toBeGreaterThan(0)
+    expect(reach).toBeLessThanOrEqual(Math.ceil(EDGE_MARGIN * rows))
+    // Alt kenardaki zemin de aynı satırda tam derinlikte.
+    expect(out[(rows - reach) * w + mid]).toBeGreaterThanOrEqual(0.99 * DEPTH_SCALE)
   })
 
   it('geniş yakın bölge tam derinliğini korur, kenarlar düzlemde kalır', () => {
