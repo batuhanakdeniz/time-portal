@@ -1,7 +1,6 @@
-import { useState, ViewTransition } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Timeline } from '../timeline/Timeline'
-import { formatYear } from '../lib/year'
+import { HoyukYearPicker } from '../year/HoyukYearPicker'
 import { mapPath } from '../routing/paths'
 import { readStoredYear, writeStoredYear } from '../routing/storedYear'
 import { isValidYear } from '../routing/yearSlug'
@@ -9,36 +8,26 @@ import { RouteNotice, useOneTimeNotice } from './YearBadge'
 
 const DEFAULT_YEAR = 2026
 
-/** `/`: yıl seçimi. #63 burada `HoyukYearPicker`'ı takacak; şimdilik mevcut zaman çizgisi. */
+/**
+ * `/`: yıl seçimi (höyük kesiti). Açılışta son yıl `tp.year`'dan.
+ * Höyük, yeni bir yıl bildirdiyse `onConfirm`'ü bir render sonra çağırır; bu yüzden `go` her zaman güncel yılı okur.
+ * Yıl hapı (`.hoyuk-pill`) haritadaki yıl rozetiyle paylaşılan geçiş öğesidir (`view-transition-name`, App.css).
+ */
 export function YearPage() {
   const navigate = useNavigate()
   const [year, setYear] = useState(() => readStoredYear() ?? DEFAULT_YEAR)
   const notice = useOneTimeNotice()
-  const valid = isValidYear(year)
 
   const go = () => {
-    if (!valid) return
+    if (!isValidYear(year)) return
     writeStoredYear(year)
     navigate(mapPath(year))
   }
 
   return (
     <section className="page page-year" aria-label="Yıl seçimi">
-      <p className="intro">Bir tarih ve konum seç, o anı 3 boyutlu keşfet.</p>
       <RouteNotice notice={notice} />
-      <div className="panel">
-        <Timeline value={year} onChange={setYear} />
-      </div>
-      <div className="actions">
-        <ViewTransition name="yil-rozeti">
-          <span className="yil-rozeti" data-testid="yil-hapi">
-            {valid ? formatYear(year) : '—'}
-          </span>
-        </ViewTransition>
-        <button type="button" className="generate" disabled={!valid} onClick={go}>
-          Bu yıla git
-        </button>
-      </div>
+      <HoyukYearPicker value={year} onChange={setYear} onConfirm={go} />
     </section>
   )
 }

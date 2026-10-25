@@ -7,6 +7,8 @@ export interface ViewerProps {
   alt: string
   /** Yalnızca fotoğraf (2.5B) görüntüleyici kullanır. */
   depthUrl?: string
+  /** Yalnızca 360° görüntüleyici: false ise kendi tam ekran düğmesi gizlenir. */
+  showFullscreenButton?: boolean
 }
 
 type Loader = () => Promise<{ default: ComponentType<ViewerProps> }>
@@ -35,7 +37,7 @@ class ErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode
  * kind 'photo' ise 2.5B fotoğraf görüntüleyiciyi, aksi halde 360° görüntüleyiciyi tembel yükler;
  * parça yüklenemezse düz önizlemeye düşer.
  */
-export function ViewerSection({ src, alt, depthUrl, kind, loader }: ViewerProps & { kind?: 'panorama' | 'photo'; loader?: Loader }) {
+export function ViewerSection({ src, alt, depthUrl, kind, loader, showFullscreenButton }: ViewerProps & { kind?: 'panorama' | 'photo'; loader?: Loader }) {
   // Her bileşen örneği için tek lazy bileşeni; loader yalnızca test içindir.
   const Viewer = loader ? lazyFor(loader) : kind === 'photo' ? PhotoViewer : DefaultViewer
   return (
@@ -51,7 +53,7 @@ export function ViewerSection({ src, alt, depthUrl, kind, loader }: ViewerProps 
       }
     >
       <Suspense fallback={<p className="preview-loading">3B görüntüleyici yükleniyor…</p>}>
-        <Viewer src={src} alt={alt} depthUrl={depthUrl} />
+        <Viewer src={src} alt={alt} depthUrl={depthUrl} showFullscreenButton={showFullscreenButton} />
       </Suspense>
     </ErrorBoundary>
   )

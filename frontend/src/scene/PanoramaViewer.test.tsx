@@ -352,6 +352,18 @@ describe('tam ekran düğmesi', () => {
     }
   })
 
+  it('showFullscreenButton=false iken API olsa da düğme gösterilmez (sahne sayfası)', () => {
+    setWebGL(true)
+    ;(document.documentElement as unknown as { requestFullscreen: unknown }).requestFullscreen = vi.fn()
+    try {
+      render(<PanoramaViewer src="/p.png" alt="Roma, 2026" showFullscreenButton={false} />)
+      expect(app()).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Tam ekran' })).not.toBeInTheDocument()
+    } finally {
+      delete (document.documentElement as { requestFullscreen?: unknown }).requestFullscreen
+    }
+  })
+
   it('düğmeye basmak sürüklemeyi başlatmaz', () => {
     setWebGL(true)
     ;(document.documentElement as unknown as { requestFullscreen: unknown }).requestFullscreen = vi.fn()
