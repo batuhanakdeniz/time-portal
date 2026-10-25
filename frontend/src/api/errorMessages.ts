@@ -4,10 +4,13 @@ import { TURKEY_ONLY_MESSAGE } from '../location/turkey'
 export const NO_IMAGE_MESSAGE = 'Bu konum için açık lisanslı bir görsel bulunamadı. Yakındaki başka bir noktayı dene.'
 export const GENERATION_FAILED_MESSAGE = 'Sahne üretilemedi. Biraz sonra tekrar dene.'
 export const BAD_REQUEST_MESSAGE = 'İstek geçersiz.'
+export const NO_PERIOD_MESSAGE = 'Bu dönem için sahne henüz yok.'
 
 /** FAILED sahnenin sunucu hata metni → Türkçe mesaj. */
 export function failedMessage(serverError: string | null): string {
-  return serverError === 'no image found for location' ? NO_IMAGE_MESSAGE : GENERATION_FAILED_MESSAGE
+  if (serverError === 'no image found for location') return NO_IMAGE_MESSAGE
+  if (serverError === 'no scene for period') return NO_PERIOD_MESSAGE
+  return GENERATION_FAILED_MESSAGE
 }
 
 /** HTTP 400 gövdesindeki sunucu metni → Türkçe mesaj. */
