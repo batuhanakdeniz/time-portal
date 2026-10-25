@@ -7,9 +7,27 @@ export interface SceneRequest {
   longitude: number
 }
 
+export interface ScenePlace {
+  province: string
+  district: string
+}
+
+export interface SceneAttribution {
+  author: string | null
+  license: string | null
+  licenseUrl: string | null
+  sourceUrl: string | null
+  /** 'mapillary' | 'wikimedia-commons' | 'sample' ya da bilinmeyen bir sağlayıcı. */
+  provider: string
+}
+
 export interface SceneResult {
   panoramaUrl: string
   depthUrl: string
+  /** Yoksa panorama sayılır. */
+  kind?: 'panorama' | 'photo'
+  place?: ScenePlace | null
+  attribution?: SceneAttribution | null
 }
 
 export interface Scene {
@@ -48,6 +66,42 @@ interface CallOptions {
 const STATUSES: readonly string[] = ['PENDING', 'RUNNING', 'READY', 'FAILED']
 const INVALID_RESPONSE = 'Sunucudan geçersiz yanıt'
 
+const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null)
+
+/** Gelen sonucu savunmacı doğrular: yanlış tipli isteğe bağlı alanlar yok sayılır. */
+export function sanitizeResult(raw: unknown): SceneResult | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.panoramaUrl !== 'string' || r.panoramaUrl === '') return null
+  const result: SceneResult = {
+    panoramaUrl: r.panoramaUrl,
+    depthUrl: typeof r.depthUrl === 'string' ? r.depthUrl : '',
+    kind: r.kind === 'photo' ? 'photo' : 'panorama',
+    place: null,
+    attribution: null,
+  }
+  const p = r.place as Record<string, unknown> | null | undefined
+  if (p && typeof p === 'object') {
+    const province = str(p.province)
+    const district = str(p.district)
+    if (province && district) result.place = { province, district }
+  }
+  const a = r.attribution as Record<string, unknown> | null | undefined
+  if (a && typeof a === 'object') {
+    const provider = str(a.provider)
+    if (provider) {
+      result.attribution = {
+        author: str(a.author),
+        license: str(a.license),
+        licenseUrl: str(a.licenseUrl),
+        sourceUrl: str(a.sourceUrl),
+        provider,
+      }
+    }
+  }
+  return result
+}
+
 async function parseOrThrow(res: Response): Promise<Scene> {
   if (res.ok) {
     let body: unknown
@@ -60,7 +114,7 @@ async function parseOrThrow(res: Response): Promise<Scene> {
     if (!b || typeof b !== 'object' || typeof b.id !== 'string' || typeof b.status !== 'string' || !STATUSES.includes(b.status)) {
       throw new ApiError(res.status, INVALID_RESPONSE)
     }
-    return b as Scene
+    return { ...(b as Scene), result: sanitizeResult(b.result) }
   }
   let message = `Sunucu hatası (${res.status})`
   try {

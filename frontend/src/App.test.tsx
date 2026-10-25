@@ -106,18 +106,18 @@ describe('App', () => {
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('Üretim başarısız: üretici çöktü')
+    expect(screen.getByRole('status')).toHaveTextContent('Sahne üretilemedi. Biraz sonra tekrar dene.')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(generate()).toBeEnabled()
   })
 
-  it('400 durumunda sunucunun mesajını gösterir', async () => {
+  it('diğer 400 hatalarında genel Türkçe mesaj gösterir, sunucu metnini göstermez', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ error: 'latitude aralık dışı' }, 400)))
     render(<App />)
     await pickRome()
     fireEvent.click(generate())
     await tick(0)
-    expect(screen.getByRole('status')).toHaveTextContent('latitude aralık dışı')
+    expect(screen.getByRole('status')).toHaveTextContent('İstek geçersiz.')
     expect(generate()).toBeEnabled()
   })
 
@@ -212,5 +212,91 @@ describe('App', () => {
     expect(signals.every((s) => !s.aborted)).toBe(true)
     unmount()
     expect(signals.every((s) => s.aborted)).toBe(true)
+  })
+
+  describe('sonuç arayüzü (#42)', () => {
+    const run = async (final: unknown) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(scene('PENDING'), 202)).mockResolvedValueOnce(json(final)))
+      render(<App />)
+      await pickRome()
+      fireEvent.click(generate())
+      await tick(0)
+    }
+    const withResult = (result: Record<string, unknown>) =>
+      scene('READY', { result: { panoramaUrl: '/p.jpg', depthUrl: '/d.png', ...result } })
+
+    it('"Beyoğlu, İstanbul" başlığı ve 2026 notu; alt yeri içerir', async () => {
+      await run(withResult({ place: { province: 'İstanbul', district: 'Beyoğlu' } }))
+      expect(screen.getByRole('heading', { name: 'Beyoğlu, İstanbul' })).toBeInTheDocument()
+      expect(screen.getByText('2026 görünümü')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Üretilen panorama: 2026, Beyoğlu, İstanbul' })).toBeInTheDocument()
+    })
+
+    it('Merkez ilçesi "<İl> Merkez" yazılır', async () => {
+      await run(withResult({ place: { province: 'Hakkari', district: 'Merkez' } }))
+      expect(screen.getByRole('heading', { name: 'Hakkari Merkez' })).toBeInTheDocument()
+    })
+
+    it('place yoksa başlıkta koordinat gösterilir', async () => {
+      await run(withResult({ place: null }))
+      expect(screen.getByRole('heading', { name: '41.9000° K, 12.5000° D' })).toBeInTheDocument()
+    })
+
+    it('2026 dışı yılda (MÖ 100.000) yıl notu çıkar', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(scene('PENDING'), 202)).mockResolvedValueOnce(json(withResult({}))))
+      render(<App />)
+      await pickRome()
+      fireEvent.keyDown(screen.getByRole('slider', { name: 'Zaman çizgisi' }), { key: 'Home' })
+      fireEvent.click(generate())
+      await tick(0)
+      expect(screen.getByText(/^Şimdilik 2026 görünümü gösteriliyor\. Seçtiğin yıl \(MÖ 100\.000\) sonraki aşamada gelecek\.$/)).toBeInTheDocument()
+      expect(screen.queryByText('2026 görünümü')).not.toBeInTheDocument()
+    })
+
+    it('atıf satırı ve ODbL satırı görüntüleyicinin altında', async () => {
+      await run(withResult({ attribution: { author: 'ayse', license: 'CC BY-SA 4.0', licenseUrl: null, sourceUrl: null, provider: 'mapillary' } }))
+      expect(screen.getByText(/^Görsel:/)).toHaveTextContent('Görsel: ayse · CC BY-SA 4.0 · Mapillary')
+      expect(screen.getByText(/İlçe sınırları/)).toHaveTextContent('İlçe sınırları © OpenStreetMap katkıcıları (ODbL)')
+    })
+
+    it('kind photo → ViewerSection kind="photo" ve depthUrl alır', async () => {
+      await run(withResult({ kind: 'photo' }))
+      expect(screen.getByRole('img', { name: /^Üretilen fotoğraf:/ })).toBeInTheDocument()
+    })
+
+    it('POST 400 Türkiye dışı → Türkçe mesaj, İngilizce metin yok', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ error: 'location outside supported area' }, 400)))
+      render(<App />)
+      await pickRome()
+      fireEvent.click(generate())
+      await tick(0)
+      expect(screen.getByRole('status')).toHaveTextContent("Şimdilik yalnızca Türkiye'deki konumlar destekleniyor.")
+      expect(screen.queryByText(/outside supported area/)).not.toBeInTheDocument()
+    })
+
+    it('FAILED no image found → görsel bulunamadı mesajı', async () => {
+      await run(scene('FAILED', { error: 'no image found for location' }))
+      expect(screen.getByRole('status')).toHaveTextContent('Bu konum için açık lisanslı bir görsel bulunamadı. Yakındaki başka bir noktayı dene.')
+      expect(screen.queryByText(/no image found/)).not.toBeInTheDocument()
+    })
+
+    it('FAILED bilinmeyen metin → genel mesaj, ham metin gösterilmez', async () => {
+      await run(scene('FAILED', { error: 'boom internal' }))
+      expect(screen.getByRole('status')).toHaveTextContent('Sahne üretilemedi. Biraz sonra tekrar dene.')
+      expect(screen.queryByText(/boom internal/)).not.toBeInTheDocument()
+    })
+
+    it('RUNNING iken 30 saniye ipucu gösterilir', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => (init?.method === 'POST' ? json(scene('PENDING'), 202) : json(scene('RUNNING')))),
+      )
+      render(<App />)
+      await pickRome()
+      fireEvent.click(generate())
+      await tick(0)
+      await tick(1000)
+      expect(screen.getByRole('status')).toHaveTextContent('Üretiliyor… İlk sahne 30 saniyeyi bulabilir.')
+    })
   })
 })

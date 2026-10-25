@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createScene, SceneTimeoutError, waitForScene, type Scene, type SceneStatus } from './scenes'
+import { ApiError, createScene, sanitizeResult, SceneTimeoutError, waitForScene, type Scene, type SceneStatus } from './scenes'
 
 const req = { year: -44, latitude: 41.9, longitude: 12.5 }
 
@@ -68,6 +68,42 @@ describe('createScene', () => {
   it('ağ hatasını olduğu gibi iletir', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
     await expect(createScene(req)).rejects.toBeInstanceOf(TypeError)
+  })
+})
+
+describe('sanitizeResult', () => {
+  const ok = { panoramaUrl: '/p.jpg', depthUrl: '/d.png' }
+
+  it('eski sözleşme (yeni alan yok) panorama sayılır', () => {
+    expect(sanitizeResult(ok)).toEqual({ ...ok, kind: 'panorama', place: null, attribution: null })
+  })
+  it('geçerli photo, place ve attribution korunur', () => {
+    const r = sanitizeResult({
+      ...ok,
+      kind: 'photo',
+      place: { province: 'İstanbul', district: 'Beyoğlu' },
+      attribution: { author: 'a', license: 'CC0', licenseUrl: 'https://x.y', sourceUrl: null, provider: 'wikimedia-commons' },
+    })
+    expect(r?.kind).toBe('photo')
+    expect(r?.place).toEqual({ province: 'İstanbul', district: 'Beyoğlu' })
+    expect(r?.attribution).toEqual({ author: 'a', license: 'CC0', licenseUrl: 'https://x.y', sourceUrl: null, provider: 'wikimedia-commons' })
+  })
+  it('yanlış tipli alanlar yok sayılır', () => {
+    const r = sanitizeResult({ ...ok, kind: 5, place: 'İstanbul', attribution: { author: 3, provider: 7 } })
+    expect(r).toEqual({ ...ok, kind: 'panorama', place: null, attribution: null })
+    expect(sanitizeResult({ ...ok, place: { province: 'X' } })?.place).toBeNull()
+    expect(sanitizeResult({ ...ok, attribution: { provider: 'sample', author: 1, license: {}, licenseUrl: [], sourceUrl: true } })?.attribution).toEqual({
+      author: null,
+      license: null,
+      licenseUrl: null,
+      sourceUrl: null,
+      provider: 'sample',
+    })
+  })
+  it('panoramaUrl yoksa ya da sonuç nesne değilse null', () => {
+    expect(sanitizeResult(null)).toBeNull()
+    expect(sanitizeResult('x')).toBeNull()
+    expect(sanitizeResult({ depthUrl: '/d.png' })).toBeNull()
   })
 })
 
