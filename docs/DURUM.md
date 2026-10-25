@@ -86,10 +86,16 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 ## Sıradaki adım
 
-Güncel durum her zaman GitHub'da: `gh issue list --label F1-türkiye-2026`, `gh pr list`.
+Güncel durum her zaman GitHub'da: `gh issue list --label F2-deneyim`, `gh pr list`.
 
-1. Bitti: #38 (harita), #39 (ilçe bulma), #40 + #49 (ilçe görseli), #41 (gerçek üretici: ONNX derinlik, yapıt deposu), #45 (2.5B görüntüleyici).
-2. Sıradaki: #42 (arayüz: `kind`'a göre görüntüleyici, "İlçe, İl", atıf, Türkçe hatalar). Faz 1 bununla tamamlanır.
-3. Sonra Faz 2: #5 (derinlikli hareket; derinlik ölçeği notu issue'da), #27, #33.
+**Faz 1 tamamlandı (25.10.2026).** Akış uçtan uca çalışıyor: Türkiye'de konum → ilçe → ilçe merkezi görseli (Mapillary 360° ya da Commons fotoğrafı) → derinlik → 360° ya da 2.5B görünüm. Ekranda ilçe/il, "2026 görünümü" notu, atıf (yazar, lisans, kaynak, ODbL) ve Türkçe hatalar var. Issue'lar: #37–#42, #44, #45, #49.
+
+Sıradaki, Faz 2 (deneyim):
+1. #53: 2.5B görüntüleyici gerçek fotoğraflarda ince nesneleri bozuyor (P1).
+2. #5: derinlikli hareket (derinlik ölçeği notu issue'da), #33 (503 yeniden deneme), #27 (OpenFreeMap).
+
+Orkestrasyon: routine durduruldu (#13 sonrası karar C). Mac mini bridge ortamı çalışmaları almadı. İşler orkestratör oturumundan elle yürütülüyor; bulut ortamına geçiş Faz 2 sonrası değerlendirilecek.
 
 Yerelde gerçek üretici: `timeportal.generator=city-image` (varsayılan), Mapillary için `MAPILLARY_TOKEN` ortam değişkeni. Model ilk istekte indirilir (`backend/MODELS.md`). Testler ve CI `fake` kullanır.
+
+Açık sahip kararları: Mapillary logosu (şartlar md. 11; şimdilik yalnızca metin bağlantısı), #26 (Faz 3 yöntemi), #11/#12 (yayın öncesi).
