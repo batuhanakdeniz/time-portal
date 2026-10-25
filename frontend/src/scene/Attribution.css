@@ -1,0 +1,26 @@
+.attribution {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #aab0c4;
+}
+
+.attribution p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.attribution a {
+  color: #aab0c4;
+  text-decoration: underline;
+}
+
+.result-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.result-note {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #aab0c4;
+}

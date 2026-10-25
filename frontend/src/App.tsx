@@ -4,7 +4,10 @@ import { formatYear } from './lib/year'
 import { formatCoordinates, type Selection } from './location/coordinates'
 import { MapSection } from './location/MapSection'
 import { ViewerSection } from './scene/ViewerSection'
-import { ApiError, createScene, isAbortError, SceneTimeoutError, waitForScene, type SceneStatus } from './api/scenes'
+import { Attribution } from './scene/Attribution'
+import { placeTitle, yearNote } from './scene/resultInfo'
+import { apiErrorMessage, failedMessage } from './api/errorMessages'
+import { ApiError, createScene, isAbortError, SceneTimeoutError, waitForScene, type SceneResult, type SceneStatus } from './api/scenes'
 import './App.css'
 
 const POLL_INTERVAL_MS = 1000
@@ -18,7 +21,7 @@ type Phase =
   | { kind: 'error'; message: string }
 
 interface Preview {
-  src: string
+  result: SceneResult
   year: number
   location: Selection
 }
@@ -46,7 +49,7 @@ function phaseText(phase: Phase): string {
 }
 
 function errorMessage(e: unknown): string {
-  if (e instanceof ApiError) return e.message
+  if (e instanceof ApiError) return apiErrorMessage(e.status, e.message)
   if (e instanceof SceneTimeoutError) return 'Üretim çok uzun sürdü, lütfen tekrar dene'
   if (e instanceof TypeError) return 'Sunucuya ulaşılamadı'
   return 'Beklenmeyen bir hata oluştu'
@@ -87,12 +90,12 @@ export default function App() {
       })
       if (signal.aborted) return
       if (done.status === 'READY' && done.result) {
-        setPreview({ src: done.result.panoramaUrl, year: req.year, location: { latitude: req.latitude, longitude: req.longitude } })
+        setPreview({ result: done.result, year: req.year, location: { latitude: req.latitude, longitude: req.longitude } })
         setPhase({ kind: 'ready' })
       } else if (done.status === 'READY') {
         setPhase({ kind: 'error', message: 'Sunucu geçersiz sonuç döndü' })
       } else {
-        setPhase({ kind: 'error', message: `Üretim başarısız: ${done.error ?? 'bilinmeyen hata'}` })
+        setPhase({ kind: 'error', message: failedMessage(done.error) })
       }
     } catch (e) {
       if (isAbortError(e) || signal.aborted) return
@@ -101,7 +104,10 @@ export default function App() {
   }, [location, year])
 
   const summary = location ? `${formatYear(year)} · ${formatCoordinates(location)}` : `${formatYear(year)} · Haritadan konum seç`
-  const previewCaption = preview ? `${formatYear(preview.year)}, ${formatCoordinates(preview.location)}` : ''
+  const result = preview?.result
+  const isPhoto = result?.kind === 'photo'
+  const title = preview && result ? placeTitle(result.place, preview.location) : ''
+  const previewCaption = preview ? `${formatYear(preview.year)}, ${title}` : ''
   return (
     <main className="app">
       <header>
@@ -122,14 +128,23 @@ export default function App() {
         <button type="button" className="generate" disabled={!location || busy} onClick={() => void generate()}>
           Sahne oluştur
         </button>
-        <p className={`status status-${phase.kind}`} role="status">
+        <p className={`status status-${phase.kind}`} role={phase.kind === 'error' ? 'alert' : 'status'}>
           {phaseText(phase)}
+          {phase.kind === 'progress' && phase.status === 'RUNNING' && <span className="status-hint"> İlk sahne 30 saniyeyi bulabilir.</span>}
         </p>
       </section>
 
-      {preview && (
-        <section className="result">
-          <ViewerSection src={preview.src} alt={`Üretilen panorama: ${previewCaption}`} />
+      {preview && result && (
+        <section className="result" aria-label="Sonuç">
+          <h2 className="result-title">{title}</h2>
+          <p className="result-note">{yearNote(preview.year)}</p>
+          <ViewerSection
+            src={result.panoramaUrl}
+            depthUrl={result.depthUrl}
+            kind={result.kind}
+            alt={`Üretilen ${isPhoto ? 'fotoğraf' : 'panorama'}: ${previewCaption}`}
+          />
+          <Attribution attribution={result.attribution} />
         </section>
       )}
     </main>

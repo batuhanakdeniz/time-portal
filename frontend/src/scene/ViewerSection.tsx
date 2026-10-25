@@ -5,6 +5,8 @@ import './ViewerSection.css'
 export interface ViewerProps {
   src: string
   alt: string
+  /** Yalnızca fotoğraf (2.5B) görüntüleyici kullanır. */
+  depthUrl?: string
 }
 
 type Loader = () => Promise<{ default: ComponentType<ViewerProps> }>
@@ -12,6 +14,12 @@ type Loader = () => Promise<{ default: ComponentType<ViewerProps> }>
 // three + react-three-fiber büyük olduğu için görüntüleyici ayrı parçada yüklenir.
 const defaultLoader: Loader = () => import('./PanoramaViewer').then((m) => ({ default: m.PanoramaViewer }))
 const DefaultViewer = lazy(defaultLoader)
+
+const photoLoader: Loader = () =>
+  import('./PhotoDepthViewer').then((m) => ({
+    default: ({ src, alt, depthUrl }: ViewerProps) => <m.PhotoDepthViewer photoUrl={src} depthUrl={depthUrl || undefined} alt={alt} />,
+  }))
+const PhotoViewer = lazy(photoLoader)
 
 class ErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -23,10 +31,13 @@ class ErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode
   }
 }
 
-/** 360° görüntüleyiciyi tembel yükler; parça yüklenemezse düz önizlemeye düşer. */
-export function ViewerSection({ src, alt, loader }: ViewerProps & { loader?: Loader }) {
+/**
+ * kind 'photo' ise 2.5B fotoğraf görüntüleyiciyi, aksi halde 360° görüntüleyiciyi tembel yükler;
+ * parça yüklenemezse düz önizlemeye düşer.
+ */
+export function ViewerSection({ src, alt, depthUrl, kind, loader }: ViewerProps & { kind?: 'panorama' | 'photo'; loader?: Loader }) {
   // Her bileşen örneği için tek lazy bileşeni; loader yalnızca test içindir.
-  const Viewer = loader ? lazyFor(loader) : DefaultViewer
+  const Viewer = loader ? lazyFor(loader) : kind === 'photo' ? PhotoViewer : DefaultViewer
   return (
     <ErrorBoundary
       key={src}
@@ -40,7 +51,7 @@ export function ViewerSection({ src, alt, loader }: ViewerProps & { loader?: Loa
       }
     >
       <Suspense fallback={<p className="preview-loading">3B görüntüleyici yükleniyor…</p>}>
-        <Viewer src={src} alt={alt} />
+        <Viewer src={src} alt={alt} depthUrl={depthUrl} />
       </Suspense>
     </ErrorBoundary>
   )

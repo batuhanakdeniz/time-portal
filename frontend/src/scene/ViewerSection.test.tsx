@@ -15,6 +15,28 @@ describe('ViewerSection', () => {
     expect(await screen.findByText('görüntüleyici /p.png Roma')).toBeInTheDocument()
   })
 
+  it('kind photo → fotoğraf görüntüleyici (photoUrl, depthUrl, alt) yüklenir', async () => {
+    const photo = vi.fn(({ photoUrl, depthUrl, alt }: { photoUrl: string; depthUrl?: string; alt?: string }) => (
+      <div>foto {photoUrl} {depthUrl} {alt}</div>
+    ))
+    vi.resetModules()
+    vi.doMock('./PhotoDepthViewer', () => ({ PhotoDepthViewer: photo }))
+    const { ViewerSection: Fresh } = await import('./ViewerSection')
+    render(<Fresh src="/p.jpg" depthUrl="/d.png" alt="Roma" kind="photo" />)
+    expect(await screen.findByText('foto /p.jpg /d.png Roma')).toBeInTheDocument()
+    vi.doUnmock('./PhotoDepthViewer')
+  })
+
+  it('kind panorama ya da yok → 360° görüntüleyici', async () => {
+    const pano = vi.fn(({ src }: { src: string; alt: string }) => <div>pano {src}</div>)
+    vi.resetModules()
+    vi.doMock('./PanoramaViewer', () => ({ PanoramaViewer: pano }))
+    const { ViewerSection: Fresh } = await import('./ViewerSection')
+    render(<Fresh src="/p.jpg" alt="Roma" />)
+    expect(await screen.findByText('pano /p.jpg')).toBeInTheDocument()
+    vi.doUnmock('./PanoramaViewer')
+  })
+
   it('parça yüklenemezse düz önizlemeye düşer', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const loader = () => Promise.reject(new Error('chunk yok'))
