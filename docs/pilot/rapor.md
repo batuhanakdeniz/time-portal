@@ -62,3 +62,45 @@ oran 5,07; iç sütun çiftlerinin %1'i zaten 10'un üstünde). Bu yüzden ikinc
 **`seam_rank`** = dikiş farkının, aynı görüntünün iç komşu sütun çiftleri arasındaki yüzdelik sırası. Sürekli
 dikişte tipik bir değer, kopuk dikişte ~1. `pole_ratio` = üst/alt %3 şeritteki yatay komşu farkı / tüm görüntününki
 (ERP'de kutup satırı tek nokta; küçük = temiz). Testler: `backend/tools/pilot/tests/` (`pytest`, sentetik veri).
+
+---
+
+## Adım 1: arazi panoraması ve hesaplanmış derinlik
+
+`backend/tools/pilot/terrain.py`. Kaynak: AWS Terrain Tiles, Terrarium PNG (anahtarsız; SRTM/GMTED/ETOPO1, kamu
+malı, atıf gerekir). z = 11 (~58 m/piksel enlem 41°'de), yarıçap 45 km, yer başına 36–42 karo (5 yer toplam 287
+karo, 21 MB önbellek).
+
+**Yöntem:** göz yerden 1,7 m. Her ERP sütunu bir azimut (orta sütun = kuzey, sağa doğru saat yönü), her satır bir
+yükseklik açısı. Işın boyunca 2.020 yatay mesafe örneği (1 m – 2 km geometrik, sonra 25 m adım), yükseklik bilinear
+örneklenir, dünya eğriliği ve standart kırılma (k = 0,13) düşülür. Birikimli en büyük yükseklik açısı satır açısını
+ilk aştığı yerde ışın çarpar (iki örnek arası doğrusal ara değer); aşmazsa gökyüzü. Deniz (yükseklik ≤ 0) düz su
+yüzeyi sayılır ve maskede ayrı işaretlenir. Çıktılar: `depth_m.npy` (metre, float32, gökyüzü ∞), `depth.png`
+(8 bit, açık = yakın), `mask.png` (gökyüzü/kara/su), `render.jpg` (gölgeli önizleme), `horizon.json` (sütun başına
+ufuk açısı ve mesafesi), `terrain.json` (yönlere göre ufuk özeti ve tarif ipuçları).
+
+**Derinlik → gri:** ters derinlik (1/m) arazide işe yaramadı: 100 m'den uzak her şey siyaha yakın çıkıyor, dağ ile
+ova ayrışmıyor. Gri değer **log ölçekte** (1 m = 255, 45 km = 1, gökyüzü = 0). Sözleşme (8 bit, açık = yakın)
+korunuyor; görüntüleyici zaten kendi yüzdelik kırpmasını yapıyor.
+
+| Yer | Göz yüksekliği (m) | Izgara (px) | Gökyüzü | Su | Dikiş oranı / sırası | Süre (karo önbellekte) | Tarif ipuçları |
+|---|---|---|---|---|---|---|---|
+| İstanbul/Beyoğlu | 79,9 | 1792² | %49,8 | %0,2 | 5,07 / 0,97 | 1,0 s | doğuda alçak tepeler, güneydoğuda su (Boğaz), güney ve kuzeybatıda düz |
+| Bursa merkez | 159,0 | 1792² | %47,4 | 0 | 1,40 / 0,81 | 0,9 s | güneyde yakın ve dik dağ (Uludağ, ufuk 13,6°), kuzeyde alçak tepeler |
+| Konya/Çumra | 1014,3 | 1536×1792 | %49,8 | 0 | 0,00 / 0,00 | 0,85 s | kuzeyde ve kuzeybatıda düz ova, güneyde alçak tepeler |
+| Şanlıurfa merkez | 528,7 | 1536×1792 | %49,1 | 0 | 0,35 / 0,33 | 0,9 s | batıda dağlar, doğu ve güneydoğuda düz ova (Harran) |
+| Trabzon merkez | 26,5 | 1792×2048 | %48,1 | %0,2 | 0,37 / 0,37 | 1,0 s | kuzey ve kuzeybatıda açık deniz, güneyde dik dağlar |
+
+[Ölçüm]. İlk çalıştırmada karo indirme yer başına 36–92 s sürdü (ağ); ışın izleme + yazma 0,9–1,0 s, tepe bellek
+0,99 GB. Beyoğlu'nun dikiş oranı 2'yi aşıyor ama veri tanım gereği sürekli (dikiş sırası 0,97: güneyde Haliç kıyısı
+dikişe denk geliyor). Bu, `seam_rank` ölçütünün eklenme nedeni.
+
+![Arazi panoraması](img/arazi-trabzon-bursa.jpg)
+*Üstte Trabzon merkez gölgeli arazi önizlemesi (orta = kuzey, Karadeniz), ortada aynı yerin hesaplanmış derinliği
+(log, açık = yakın), altta Bursa merkez (kenarlar = güney, Uludağ). [Ölçüm]*
+
+**Değerlendirme:** Adım 1 tek başına teslim edilebilir: her il için ufuk ve metrik derinlik bir saniyede, depolama
+gerektirmeden hesaplanıyor; Java'ya ya da tarayıcıya taşınabilir. Sınırları: (1) 30–60 m çözünürlük yakın planda
+düz bir zemin veriyor; ERP'nin alt yarısı neredeyse tamamen yakın zemin (1,7 m göz yüksekliğinde normal). (2) Model
+yüzeyi binaları kısmen içeriyor (SRTM), ama ince yapı yok. (3) 45 km'nin ötesindeki ufuk (ör. Bursa'dan Marmara
+kıyısı) kesiliyor. (4) Kıyı bilgisi bugünün kıyısı; Neolitik deniz seviyesi kayması (GEBCO) bu pilotta yok.
