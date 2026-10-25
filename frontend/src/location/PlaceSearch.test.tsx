@@ -108,6 +108,25 @@ describe('PlaceSearch', () => {
     expect(input).toHaveValue('İstanbul')
   })
 
+  it('etkin seçenek yokken Enter ilk sonucu seçer; liste kapalıyken Enter bir şey yapmaz', async () => {
+    const { input, onSelect } = await renderSearch()
+    fireEvent.change(input, { target: { value: 'ankara' } })
+    expect(input).not.toHaveAttribute('aria-activedescendant')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledTimes(1)
+    expect(onSelect.mock.calls[0][0]).toMatchObject({ plate: '06', province: 'Ankara' })
+    expect(onSelect.mock.calls[0][0].district).toBeUndefined()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledTimes(1)
+  })
+
+  it('sonuç yokken Enter bir şey seçmez', async () => {
+    const { input, onSelect } = await renderSearch()
+    fireEvent.change(input, { target: { value: 'qqq' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   it('ArrowUp ilk konumdan sona sarar', async () => {
     const { input } = await renderSearch()
     fireEvent.change(input, { target: { value: 'beyog' } })

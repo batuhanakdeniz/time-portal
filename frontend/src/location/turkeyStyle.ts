@@ -1,5 +1,5 @@
 import type { ExpressionSpecification, GeoJSONSourceSpecification, StyleSpecification } from 'maplibre-gl'
-import type { DistrictProps, PlaceCollection, ProvinceProps } from './places'
+import type { DistrictProps, PlaceCollection, PolygonGeometry, ProvinceProps } from './places'
 
 // Altlıksız (karo yok) il/ilçe seçim haritası stili. Temel: docs/arastirma/faz2-arastirma-raporu.md A §3.
 // Uygulamanın koyu temasıyla uyumlu renkler (index.css: #0b0d14, vurgu #8ab4ff)
@@ -40,14 +40,72 @@ export interface LabelCollection {
   features: { type: 'Feature'; properties: { name: string }; geometry: { type: 'Point'; coordinates: [number, number] } }[]
 }
 
-/** İl adları il merkezine (province-centers.tsv) yazılır. */
+type Ring = number[][]
+const polygonsOf = (g: PolygonGeometry): Ring[][] => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates)
+
+function inRing(x: number, y: number, ring: Ring): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+export function inPolygon(x: number, y: number, g: PolygonGeometry): boolean {
+  return polygonsOf(g).some((rings) => inRing(x, y, rings[0]) && !rings.slice(1).some((h) => inRing(x, y, h)))
+}
+
+/** `y` enleminde poligonun içinde kalan aralıklar: [batı, doğu] çiftleri (delikler dahil, çift-tek kuralı). */
+function insideSpans(y: number, g: PolygonGeometry): [number, number][] {
+  const spans: [number, number][] = []
+  for (const rings of polygonsOf(g)) {
+    const xs: number[] = []
+    for (const ring of rings)
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i]
+        const [xj, yj] = ring[j]
+        if (yi > y !== yj > y) xs.push(((xj - xi) * (y - yi)) / (yj - yi) + xi)
+      }
+    xs.sort((a, b) => a - b)
+    for (let k = 0; k + 1 < xs.length; k += 2) spans.push([xs[k], xs[k + 1]])
+  }
+  return spans
+}
+
+/**
+ * Etiket noktası: il merkezi (province-centers.tsv) poligonun içindeyse kendisi. Değilse (ör. Çanakkale merkezi
+ * sadeleştirilmiş kıyının dışında, suya düşüyor) aynı enlemde merkeze en yakın iç aralığın, merkeze bakan ucunun
+ * biraz içi; o enlemde
+ * kara yoksa sınır kutusunun orta enlemindeki en geniş aralığın ortası.
+ */
+const LABEL_INSET = 0.05 // derece
+
+export function labelPoint(p: ProvinceProps, g: PolygonGeometry): [number, number] {
+  const x = p.centerLon
+  const y = p.centerLat
+  if (inPolygon(x, y, g)) return [x, y]
+  const dist = ([a, b]: [number, number]) => (x < a ? a - x : x > b ? x - b : 0)
+  const near = insideSpans(y, g).sort((s, t) => dist(s) - dist(t))[0]
+  if (near) {
+    // Aralığın merkeze yakın ucundan biraz içeri (en çok ~4 km, dar aralıkta ortası)
+    const inset = Math.min(LABEL_INSET, (near[1] - near[0]) / 2)
+    return [x < near[0] ? near[0] + inset : near[1] - inset, y]
+  }
+  const midY = (p.minLat + p.maxLat) / 2
+  const wide = insideSpans(midY, g).sort((s, t) => t[1] - t[0] - (s[1] - s[0]))[0]
+  return wide ? [(wide[0] + wide[1]) / 2, midY] : [x, y]
+}
+
+/** İl adları il merkezine yazılır; merkez il sınırının dışındaysa sınır içindeki yakın bir noktaya. */
 export function provinceLabels(provinces: PlaceCollection<ProvinceProps>): LabelCollection {
   return {
     type: 'FeatureCollection',
-    features: provinces.features.map(({ properties: p }) => ({
+    features: provinces.features.map(({ properties: p, geometry }) => ({
       type: 'Feature',
       properties: { name: p.name },
-      geometry: { type: 'Point', coordinates: [p.centerLon, p.centerLat] },
+      geometry: { type: 'Point', coordinates: labelPoint(p, geometry) },
     })),
   }
 }

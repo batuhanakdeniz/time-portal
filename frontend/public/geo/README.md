@@ -21,6 +21,8 @@ Bu iki dosya ODbL kapsamında **uyarlanmış veritabanıdır**: aynı lisansla p
 
 Geometri `Polygon`/`MultiPolygon`, koordinatlar 3 ondalık (~100 m).
 
+İl adı etiketi `centerLat/centerLon`'a yazılır. Merkez sadeleştirilmiş il sınırının dışında kalıyorsa (şu an yalnızca Çanakkale: merkez kıyı çizgisinin dışında, suya düşüyor) etiket aynı enlemde en yakın kara parçasının ~4 km içine kayar (`turkeyStyle.ts` `labelPoint`). Veri değişmez: `centerLat/centerLon` backend'le aynı kalır, sahne isteği bu koordinatı kullanır.
+
 ## Üretim
 
 ```

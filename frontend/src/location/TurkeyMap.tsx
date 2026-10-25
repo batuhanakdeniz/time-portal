@@ -17,6 +17,14 @@ type Ref = { source: 'provinces' | 'districts'; id: string }
 
 const EASE_MS = 600
 
+// MapLibre arayüz metinleri (varsayılanları İngilizce)
+export const MAP_LOCALE: Record<string, string> = {
+  'CooperativeGesturesHandler.WindowsHelpText': 'Haritayı yakınlaştırmak için Ctrl + kaydırma kullan',
+  'CooperativeGesturesHandler.MacHelpText': 'Haritayı yakınlaştırmak için ⌘ + kaydırma kullan',
+  'CooperativeGesturesHandler.MobileHelpText': 'Haritayı kaydırmak için iki parmak kullan',
+  'AttributionControl.ToggleAttribution': 'Atfı göster/gizle',
+}
+
 // Vite worker dosyasını kendiliğinden çıktıya koymaz; adresi açıkça veriyoruz (LocationPicker ile aynı kalıp).
 let workerUrlSet = false
 function ensureWorkerUrl() {
@@ -64,6 +72,7 @@ export function TurkeyMap({ selected, onSelect }: Props) {
   // Harita veri hazır olunca bir kez kurulur
   useEffect(() => {
     if (!data || !containerRef.current) return
+    setMapError(false) // yeniden denemeden sonra kap gizli kalmasın
     let map: MapLibreMap
     try {
       ensureWorkerUrl()
@@ -81,12 +90,14 @@ export function TurkeyMap({ selected, onSelect }: Props) {
         // Sayfa kaydırmasıyla çakışmasın: mobilde iki parmak, masaüstünde Ctrl/Cmd ile yakınlaştırma
         cooperativeGestures: true,
         attributionControl: { compact: true, customAttribution: ATTRIBUTION },
+        locale: MAP_LOCALE,
       })
     } catch {
       setMapError(true)
       return
     }
     map.touchZoomRotate.disableRotation() // iki parmakla yakınlaştırma kalsın, döndürme kapansın
+    map.keyboard.disableRotation() // klavyeyle kaydırma/yakınlaştırma kalsın, döndürme/eğme kapansın
     mapRef.current = map
 
     let loaded = false

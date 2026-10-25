@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   easeTo: vi.fn(),
   cameraForBounds: vi.fn((_b: unknown, _o: unknown) => ({ center: [29, 41], zoom: 8.2 }) as { center: number[]; zoom: number }),
   disableRotation: vi.fn(),
+  keyboardDisableRotation: vi.fn(),
   remove: vi.fn(),
   setWorkerUrl: vi.fn(),
   fail: false,
@@ -20,6 +21,7 @@ vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?url', () => ({ default: '/asset
 vi.mock('maplibre-gl', () => {
   class Map {
     touchZoomRotate = { disableRotation: mocks.disableRotation }
+    keyboard = { disableRotation: mocks.keyboardDisableRotation }
     canvas = { style: { cursor: '' } }
     constructor(options: Record<string, unknown>) {
       mocks.mapOptions = options
@@ -84,7 +86,7 @@ beforeEach(() => {
   mocks.fail = false
   mocks.mapOptions = null
   for (const k of Object.keys(mocks.handlers)) delete mocks.handlers[k]
-  for (const f of [mocks.setFeatureState, mocks.easeTo, mocks.cameraForBounds, mocks.remove]) f.mockClear()
+  for (const f of [mocks.setFeatureState, mocks.easeTo, mocks.cameraForBounds, mocks.remove, mocks.disableRotation, mocks.keyboardDisableRotation]) f.mockClear()
   reduceMotion = false
   vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => fixture[url] }) as Response))
   vi.stubGlobal('matchMedia', (q: string) => ({ matches: reduceMotion && q.includes('reduce'), media: q }))
@@ -120,7 +122,15 @@ describe('TurkeyMap', () => {
     expect(o.touchPitch).toBe(false)
     expect(o.cooperativeGestures).toBe(true)
     expect(o.attributionControl).toEqual({ compact: true, customAttribution: '© OpenStreetMap katkıcıları, geoBoundaries (ODbL)' })
-    expect(mocks.disableRotation).toHaveBeenCalled()
+    // döndürme hem dokunmada hem klavyede kapalı
+    expect(mocks.disableRotation).toHaveBeenCalledTimes(1)
+    expect(mocks.keyboardDisableRotation).toHaveBeenCalledTimes(1)
+    const locale = o.locale as Record<string, string>
+    for (const k of ['CooperativeGesturesHandler.WindowsHelpText', 'CooperativeGesturesHandler.MacHelpText',
+      'CooperativeGesturesHandler.MobileHelpText', 'AttributionControl.ToggleAttribution']) {
+      expect(locale[k]).toMatch(/[a-zçğıöşü]/i)
+    }
+    expect(locale['CooperativeGesturesHandler.MobileHelpText']).toBe('Haritayı kaydırmak için iki parmak kullan')
     const style = o.style as { sources: Record<string, { type: string; data: unknown }> }
     expect(Object.keys(style.sources).sort()).toEqual(['districts', 'province-labels', 'provinces'])
     expect(style.sources.provinces.data).toEqual(fixture[PROVINCES_URL])

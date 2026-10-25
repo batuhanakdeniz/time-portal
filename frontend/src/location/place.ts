@@ -17,7 +17,7 @@ export function slugify(name: string): string {
   return name
     .replace(/[ğĞüÜşŞıIİöÖçÇ]/g, (c) => TR_ASCII[c])
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '') // â, î, û gibi kalan aksanlar
+    .replace(/[\u0300-\u036f]/g, '') // â, î, û gibi kalan aksanlar
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')

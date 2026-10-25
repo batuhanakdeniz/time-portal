@@ -26,7 +26,7 @@ export function foldTr(s: string): string {
     .toLocaleLowerCase('tr')
     .replace(/[ğüşıöç]/g, (c) => TR_FOLD[c])
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 }
@@ -129,9 +129,11 @@ export function PlaceSearch({ selected, onSelect }: Props) {
       if (n === 0) return
       setActive((i) => (e.key === 'ArrowDown' ? (i + 1) % n : i <= 0 ? n - 1 : i - 1))
     } else if (e.key === 'Enter') {
-      if (open && active >= 0 && options[active]) {
+      // Etkin seçenek yoksa ilk sonuç seçilir ("istanbul" + Enter)
+      const opt = open ? options[active >= 0 ? active : 0] : undefined
+      if (opt) {
         e.preventDefault()
-        choose(options[active])
+        choose(opt)
       }
     } else if (e.key === 'Escape') {
       if (open) {
