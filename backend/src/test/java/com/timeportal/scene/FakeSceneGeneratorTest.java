@@ -52,4 +52,19 @@ class FakeSceneGeneratorTest {
 		assertThat(stages).containsExactly(SceneStage.LOCATING, SceneStage.IMAGE_SEARCH, SceneStage.DEPTH,
 				SceneStage.PACKAGING);
 	}
+
+	@Test
+	void stageListenerFailureDoesNotBreakGeneration() {
+		FakeSceneGenerator fake = new FakeSceneGenerator(0, (lat, lon) -> Optional.empty());
+		List<SceneStage> stages = new ArrayList<>();
+
+		SceneResult r = fake.generate(new SceneRequest(2026, 0, 0), stage -> {
+			stages.add(stage);
+			throw new IllegalStateException("dinleyici bozuk");
+		});
+
+		assertThat(r.panoramaUrl()).isEqualTo("/api/samples/sample-pano.png");
+		assertThat(stages).containsExactly(SceneStage.LOCATING, SceneStage.IMAGE_SEARCH, SceneStage.DEPTH,
+				SceneStage.PACKAGING);
+	}
 }

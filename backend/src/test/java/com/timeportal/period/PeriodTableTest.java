@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.timeportal.period.PeriodBucket.Confidence;
+import com.timeportal.scene.SceneRequest;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -114,5 +115,16 @@ class PeriodTableTest {
 		assertThat(Confidence.GERCEK.json()).isEqualTo("gercek");
 		assertThat(Confidence.YORUM.json()).isEqualTo("yorum");
 		assertThat(Confidence.KURGU.json()).isEqualTo("kurgu");
+	}
+
+	/** İstek doğrulaması ile tablo aynı aralığı kapsamalı; yoksa geçerli istek dönem kontrolünde fırlatır. */
+	@Test
+	void tableRangeMatchesTheSceneRequestYearRange() {
+		assertThat(PeriodTable.MIN_YEAR).isEqualTo(SceneRequest.MIN_YEAR);
+		assertThat(PeriodTable.END_YEAR_EXCLUSIVE - 1).isEqualTo(SceneRequest.MAX_YEAR);
+		assertThat(PeriodTable.BUCKETS.getFirst().yearFrom()).isEqualTo(SceneRequest.MIN_YEAR);
+		assertThat(PeriodTable.BUCKETS.getLast().yearTo() - 1).isEqualTo(SceneRequest.MAX_YEAR);
+		assertThat(PeriodTable.bucketOf(new SceneRequest(SceneRequest.MIN_YEAR, 0, 0).year())).isNotNull();
+		assertThat(PeriodTable.bucketOf(new SceneRequest(SceneRequest.MAX_YEAR, 0, 0).year())).isNotNull();
 	}
 }

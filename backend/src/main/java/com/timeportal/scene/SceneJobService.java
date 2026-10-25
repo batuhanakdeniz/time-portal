@@ -188,17 +188,20 @@ public class SceneJobService {
 			if (running == null) {
 				return;
 			}
-			if (PeriodTable.bucketOf(running.request().year()).isFictional()) {
-				// Karar 7A: tarih öncesi ve gelecek için sahne yok; görsel araması da yapılmaz.
-				log.info("No scene for the period of job {} (year {})", id, running.request().year());
-				jobs.computeIfPresent(id, (key, job) -> job.failed(NO_SCENE_FOR_PERIOD, clock.instant()));
-				return;
-			}
 			SceneResult result = null;
 			boolean failed = false;
 			String failure = GENERIC_FAILURE;
 			try {
-				result = generator.generate(running.request(), stage -> updateStage(id, stage));
+				// Dönem kontrolü de bu try içinde: fırlatırsa iş RUNNING'de kalmaz, genel hatayla biter.
+				if (PeriodTable.bucketOf(running.request().year()).isFictional()) {
+					// Karar 7A: tarih öncesi ve gelecek için sahne yok; görsel araması da yapılmaz.
+					log.info("No scene for the period of job {} (year {})", id, running.request().year());
+					failed = true;
+					failure = NO_SCENE_FOR_PERIOD;
+				}
+				else {
+					result = generator.generate(running.request(), stage -> updateStage(id, stage));
+				}
 			}
 			catch (Throwable e) {
 				// Error türevleri de dahil: iş asla RUNNING'de takılı kalmamalı.

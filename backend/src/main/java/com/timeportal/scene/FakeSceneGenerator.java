@@ -2,6 +2,8 @@ package com.timeportal.scene;
 
 import com.timeportal.geo.District;
 import com.timeportal.geo.DistrictLocator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -19,6 +21,8 @@ public class FakeSceneGenerator implements SceneGenerator {
 	static final String PANORAMA_URL = "/api/samples/sample-pano.png";
 	static final String DEPTH_URL = "/api/samples/sample-depth.png";
 	static final String SAMPLE_PROVIDER = "sample";
+
+	private static final Logger log = LoggerFactory.getLogger(FakeSceneGenerator.class);
 
 	private final long delayMillis;
 	private final DistrictLocator districts;
@@ -38,7 +42,7 @@ public class FakeSceneGenerator implements SceneGenerator {
 	public SceneResult generate(SceneRequest request, StageListener listener) {
 		SceneStage[] stages = SceneStage.values();
 		for (int i = 0; i < stages.length; i++) {
-			listener.onStage(stages[i]);
+			notifySafely(listener, stages[i]);
 			pause(delayMillis / stages.length + (i == stages.length - 1 ? delayMillis % stages.length : 0));
 		}
 		SceneResult.Place place = districts.locate(request.latitude(), request.longitude())
@@ -48,6 +52,16 @@ public class FakeSceneGenerator implements SceneGenerator {
 				new SceneResult.Attribution("time-portal", "CC0 1.0", "https://creativecommons.org/publicdomain/zero/1.0/",
 						"https://github.com/batuhanakdeniz/time-portal", SAMPLE_PROVIDER),
 				ScenePeriod.ofYear(request.year()));
+	}
+
+	/** Dinleyici hatası üretimi bozmasın. */
+	private static void notifySafely(StageListener listener, SceneStage stage) {
+		try {
+			listener.onStage(stage);
+		}
+		catch (RuntimeException e) {
+			log.warn("Stage listener failed at {}", stage, e);
+		}
 	}
 
 	private static void pause(long millis) {
