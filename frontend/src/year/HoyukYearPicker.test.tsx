@@ -182,6 +182,31 @@ describe('yıl yazma', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('MÖ 100.000 ile 100.000')
     expect(onChange).not.toHaveBeenCalled()
   })
+  it('odaklanınca metin tümüyle seçilir; yazmak eskiyi değiştirir', () => {
+    setup(-9600)
+    const el = input() as HTMLInputElement
+    fireEvent.focus(el)
+    expect(el.selectionStart).toBe(0)
+    expect(el.selectionEnd).toBe(el.value.length)
+    expect(el.value).toBe('9600')
+  })
+  it('"Yıl yaz" düğmesi alanı odaklar ve metni seçer', () => {
+    setup(-9600)
+    fireEvent.click(screen.getByRole('button', { name: 'Yıl yaz' }))
+    const el = input() as HTMLInputElement
+    expect(el).toHaveFocus()
+    expect(el.selectionStart).toBe(0)
+    expect(el.selectionEnd).toBe(4)
+  })
+  it('boş alanda Enter hiçbir şey yapmaz', () => {
+    const { onChange, onConfirm } = setup(1453)
+    fireEvent.change(input(), { target: { value: '   ' } })
+    fireEvent.submit(input())
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(input()).not.toHaveAttribute('aria-invalid')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
   it('seçili yılda Enter onaylar', () => {
     const { onConfirm, onChange } = setup(1453)
     fireEvent.change(input(), { target: { value: '1453' } })

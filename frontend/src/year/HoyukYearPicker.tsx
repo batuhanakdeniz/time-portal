@@ -287,7 +287,10 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
   }, [intro])
 
   useEffect(() => {
-    if (sheet === 'input') inputRef.current?.focus()
+    if (sheet !== 'input') return
+    // Odakla ve tümünü seç: yazılan metin eski yılın yerine geçsin ("9600mö 1200" birleşmesin).
+    inputRef.current?.focus()
+    inputRef.current?.select()
   }, [sheet])
 
   // Scroll-driven animasyon yoksa (Firefox): IntersectionObserver + rAF ile eser paralaksı.
@@ -412,6 +415,11 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
 
   const onSubmitYear = (e: FormEvent) => {
     e.preventDefault()
+    // Boş alanda Enter hiçbir şey yapmaz (ne hata ne gezinme ne onay).
+    if (draft.trim() === '') {
+      setInputError(null)
+      return
+    }
     const r = parseYearInput(draft, era)
     if (!r.ok) {
       setInputError(r.error)
@@ -606,6 +614,7 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
                 value={draft}
                 aria-invalid={inputError ? true : undefined}
                 aria-describedby={inputError ? errorId : undefined}
+                onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => {
                   setDraft(e.target.value)
                   setInputError(null)
