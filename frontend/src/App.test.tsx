@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation, useNavigate, type InitialEntry } from 'react-router'
@@ -155,6 +156,26 @@ describe('App: yönlendirme', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Bu yıl açılamadı. Yıl 0 yoktur; MÖ 100.000 ile 100.000 arasında bir yıl seç.')
     },
   )
+
+  it('geçersiz yıl mesajı tek seferliktir: geri/ileri ile dönünce yeniden çıkmaz', () => {
+    renderAt('/yil/0')
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    fireEvent.click(goToYear())
+    expect(url()).toBe('/yil/2026')
+    browserBack()
+    expect(url()).toBe('/')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('geçersiz yer mesajı tek seferliktir', () => {
+    renderAt('/yil/1453/yer/beyoglu')
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('link', { name: 'Yılı değiştir: 1453' }))
+    expect(url()).toBe('/')
+    browserBack()
+    expect(url()).toBe('/yil/1453')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 
   it.each(['/bilinmeyen', '/yil', '/yil/1453/yer', '/yil/1453/yer/34/sahne/fazla'])('bilinmeyen yol %s → /', (path) => {
     renderAt(path)
@@ -411,6 +432,25 @@ describe('App: sahne üretimi', () => {
     expect(fetchMock.mock.calls.filter(([, i]) => i?.method === 'POST')).toHaveLength(1)
     expect(fetchMock.mock.calls.length).toBeGreaterThan(2)
     expect(signals.every((s) => !s.aborted)).toBe(true)
+  })
+
+  it('StrictMode altında sahne sayfası tek POST atar', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST' ? json(scene('PENDING'), 202) : json(readyScene),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/yil/2026']}>
+          <AppRoutes />
+        </MemoryRouter>
+      </StrictMode>,
+    )
+    await pickRome()
+    fireEvent.click(seeScene())
+    await tick(0)
+    expect(status()).toHaveTextContent('Sahne hazır')
+    expect(fetchMock.mock.calls.filter(([, i]) => i?.method === 'POST')).toHaveLength(1)
   })
 
   it('yükleme sırasında haritaya dönmek yoklamayı iptal eder', async () => {

@@ -7,7 +7,7 @@ import { mapPath, scenePath } from '../routing/paths'
 import { writeStoredYear } from '../routing/storedYear'
 import { useRouteGuard } from './routeGuard'
 import type { RouteState } from './routeState'
-import { RouteNotice, YearBadge } from './YearBadge'
+import { RouteNotice, useOneTimeNotice, YearBadge } from './YearBadge'
 
 /**
  * Geçici yer slug'ı: mevcut `MapSection` yalnızca enlem/boylam verir, il (plaka) bilinmez.
@@ -26,6 +26,7 @@ function MapContent({ year, placeSlug, state }: { year: number; placeSlug?: stri
   const navigate = useNavigate()
   // Seçimin tek kaynağı geçmiş kaydı: geri tuşuyla dönüldüğünde seçim korunur.
   const selection = state.selection ?? null
+  const notice = useOneTimeNotice()
 
   useEffect(() => writeStoredYear(year), [year])
 
@@ -46,7 +47,7 @@ function MapContent({ year, placeSlug, state }: { year: number; placeSlug?: stri
       <div className="page-bar">
         <YearBadge year={year} />
       </div>
-      <RouteNotice notice={state.notice} />
+      <RouteNotice notice={notice} />
       <div className="panel">
         <MapSection value={selection} onChange={onChange} />
       </div>

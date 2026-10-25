@@ -114,8 +114,16 @@ function SceneRun({ year, selection }: { year: number; selection: Selection }) {
   }, [year, latitude, longitude])
 
   useEffect(() => {
-    void generate()
-    return () => controllerRef.current?.abort()
+    // StrictMode etkiyi kur-sök-kur yapar. İstek bir mikro görev sonra gönderilir; o ana dek
+    // sökülmüş bir çalıştırma hiç göndermez, böylece backend'de çift iş açılmaz.
+    let active = true
+    void Promise.resolve().then(() => {
+      if (active) void generate()
+    })
+    return () => {
+      active = false
+      controllerRef.current?.abort()
+    }
   }, [generate])
 
   const result = phase.kind === 'ready' ? phase.result : null

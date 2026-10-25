@@ -1,21 +1,19 @@
 import { useState, ViewTransition } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 import { Timeline } from '../timeline/Timeline'
 import { formatYear } from '../lib/year'
 import { mapPath } from '../routing/paths'
 import { readStoredYear, writeStoredYear } from '../routing/storedYear'
 import { isValidYear } from '../routing/yearSlug'
-import { readRouteState } from './routeState'
-import { RouteNotice } from './YearBadge'
+import { RouteNotice, useOneTimeNotice } from './YearBadge'
 
 const DEFAULT_YEAR = 2026
 
 /** `/`: yıl seçimi. #63 burada `HoyukYearPicker`'ı takacak; şimdilik mevcut zaman çizgisi. */
 export function YearPage() {
-  const location = useLocation()
   const navigate = useNavigate()
   const [year, setYear] = useState(() => readStoredYear() ?? DEFAULT_YEAR)
-  const { notice } = readRouteState(location.state)
+  const notice = useOneTimeNotice()
   const valid = isValidYear(year)
 
   const go = () => {
