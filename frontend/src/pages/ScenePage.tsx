@@ -3,7 +3,18 @@ import { Link, Navigate, useNavigate } from 'react-router'
 import { formatYear } from '../lib/year'
 import type { PlaceSelection } from '../location/place'
 import { usePlaces, type PlacesData } from '../location/places'
-import { isAbortError, type SceneResult, type SceneStage } from '../api/scenes'
+import { failedMessage, NO_IMAGE_MESSAGE, NO_PERIOD_MESSAGE } from '../api/errorMessages'
+import {
+  ApiError,
+  createScene,
+  isAbortError,
+  SceneTimeoutError,
+  waitForScene,
+  type RetryWaitHandler,
+  type Scene,
+  type SceneResult,
+  type SceneStage,
+} from '../api/scenes'
 import { ViewerSection } from '../scene/ViewerSection'
 import { SceneOverlay } from '../scene/SceneOverlay'
 import { LoadingScreen } from '../scene/LoadingScreen'
@@ -12,11 +23,31 @@ import { mapPath, scenePath } from '../routing/paths'
 import { useRouteGuard } from './routeGuard'
 import { INVALID_PLACE_NOTICE, type RouteState } from './routeState'
 import { nearestDistricts } from './nearby'
-import { errorKind, failedKind, runScene } from './sceneJob'
 
 /** Önbellekteki sahne bu sürede gelirse yükleme ekranı hiç gösterilmez (ekran yanıp sönmez). */
 export const LOADER_DELAY_MS = 300
 const ELAPSED_TICK_MS = 1000
+const POLL_INTERVAL_MS = 1000
+/** POST'tan sonraki toplam yoklama süresi (asılı istek ve 503 beklemeleri dahil). */
+const POLL_TIMEOUT_MS = 120_000
+
+/** FAILED sahnenin sunucu metni → hata ekranı türü (metin eşlemesi `errorMessages.ts`'ten). */
+function failedKind(serverError: string | null): SceneErrorKind {
+  const message = failedMessage(serverError)
+  if (message === NO_IMAGE_MESSAGE) return 'no-image'
+  if (message === NO_PERIOD_MESSAGE) return 'no-period'
+  return 'unknown'
+}
+
+/** İstek/yoklama hatası → hata ekranı türü. Sunucu metni hiçbir yolda gösterilmez. */
+function errorKind(e: unknown): SceneErrorKind {
+  if (e instanceof ApiError) return e.status === 503 ? 'busy' : 'unknown'
+  if (e instanceof SceneTimeoutError) return 'timeout'
+  if (e instanceof TypeError) return 'network'
+  return 'unknown'
+}
+
+const isDone = (scene: Scene) => scene.status === 'READY' || scene.status === 'FAILED'
 
 type Phase =
   | { kind: 'loading'; stage: SceneStage | null }
@@ -99,25 +130,34 @@ function SceneRun({ year, placeSlug, selection, data, onBack, onEditYear }: Scen
     startedAt.current = Date.now()
     setElapsedMs(0)
     setPhase({ kind: 'loading', stage: null })
+    // Sunucu meşgulken (503) geri sayım: POST'ta `createScene` en çok 3 kez, yoklamada `waitForScene`
+    // toplam süre dolana dek `Retry-After` kadar bekleyip yeniden dener.
+    const onRetryWait: RetryWaitHandler = (seconds) => {
+      if (signal.aborted) return
+      const t = Date.now()
+      setNow(t)
+      setPhase({ kind: 'busy', until: t + seconds * 1000 })
+    }
+    // Her yanıtta (POST dahil) aşama aktarılır; meşgul ekranından da yüklemeye döner.
+    const onScene = (scene: Scene) => {
+      if (!signal.aborted && !isDone(scene)) setPhase({ kind: 'loading', stage: scene.stage ?? null })
+    }
     try {
       // İstek tıklanan nokta yerine ilçe (ya da il) merkeziyle gider: aynı yer her zaman aynı istek, önbellek isabeti.
-      const done = await runScene(
-        { year, latitude: lat, longitude: lon },
-        {
-          signal,
-          onRetryWait: (seconds) => {
-            if (signal.aborted) return
-            const t = Date.now()
-            setNow(t)
-            setPhase({ kind: 'busy', until: t + seconds * 1000 })
-          },
-          onUpdate: (scene) => {
-            if (!signal.aborted && scene.status !== 'READY' && scene.status !== 'FAILED') {
-              setPhase({ kind: 'loading', stage: scene.stage ?? null })
-            }
-          },
-        },
-      )
+      const created = await createScene({ year, latitude: lat, longitude: lon }, { signal, onRetryWait })
+      if (signal.aborted) return
+      onScene(created)
+      // İlk yoklama beklemeden: önbellekteki sahne çoğu zaman bu yanıtta hazırdır (yükleyici hiç görünmez).
+      const done = isDone(created)
+        ? created
+        : await waitForScene(created.id, {
+            signal,
+            intervalMs: POLL_INTERVAL_MS,
+            timeoutMs: POLL_TIMEOUT_MS,
+            retryOnBusy: true,
+            onRetryWait,
+            onScene,
+          })
       if (signal.aborted) return
       if (done.status === 'READY' && done.result) setPhase({ kind: 'ready', result: done.result, reveal: coveredRef.current })
       else if (done.status === 'READY') setPhase({ kind: 'error', error: 'unknown' })

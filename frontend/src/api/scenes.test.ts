@@ -196,6 +196,55 @@ describe('waitForScene', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 
+  it('onScene her yanıtta çağrılır (aynı durumda aşama değişimi ve son yanıt dahil); ilk yoklama beklemeden', async () => {
+    const ready = scene('READY', { result: { panoramaUrl: '/p.png', depthUrl: '/d.png' } })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json(scene('RUNNING', { stage: 'LOCATING' })))
+      .mockResolvedValueOnce(json(scene('RUNNING', { stage: 'DEPTH' })))
+      .mockResolvedValueOnce(json(ready))
+    vi.stubGlobal('fetch', fetchMock)
+    const stages: (string | null | undefined)[] = []
+    const statuses: SceneStatus[] = []
+    const p = waitForScene('s1', { intervalMs: 100, onScene: (s) => stages.push(s.stage), onStatus: (s) => statuses.push(s) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(stages).toEqual(['LOCATING'])
+    await vi.advanceTimersByTimeAsync(200)
+    await expect(p).resolves.toMatchObject({ status: 'READY' })
+    expect(stages).toEqual(['LOCATING', 'DEPTH', null])
+    expect(statuses).toEqual(['RUNNING', 'READY'])
+  })
+
+  it('onScene 503 beklemesinde çağrılmaz', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json(scene('RUNNING', { stage: 'IMAGE_SEARCH' })))
+      .mockResolvedValueOnce(busy('1'))
+      .mockResolvedValueOnce(json(scene('READY')))
+    vi.stubGlobal('fetch', fetchMock)
+    const onScene = vi.fn()
+    const p = waitForScene('s1', { intervalMs: 100, retryOnBusy: true, onScene })
+    await vi.advanceTimersByTimeAsync(1100)
+    await expect(p).resolves.toMatchObject({ status: 'READY' })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(onScene.mock.calls.map(([s]) => s.status)).toEqual(['RUNNING', 'READY'])
+  })
+
+  it('iptal edildikten sonra gelen yanıt onScene çağırmaz', async () => {
+    const ctrl = new AbortController()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        ctrl.abort()
+        return json(scene('RUNNING'))
+      }),
+    )
+    const onScene = vi.fn()
+    await expect(waitForScene('s1', { signal: ctrl.signal, onScene })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(onScene).not.toHaveBeenCalled()
+  })
+
   it('FAILED durumunu hata mesajıyla döner', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(scene('FAILED', { error: 'üretici çöktü' }))))
     const result = await waitForScene('s1', { intervalMs: 100 })

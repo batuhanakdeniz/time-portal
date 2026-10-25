@@ -292,10 +292,16 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export interface WaitOptions extends CallOptions {
   intervalMs?: number
   timeoutMs?: number
+  /** Yalnızca durum (status) değişince çağrılır. */
   onStatus?: (status: SceneStatus, scene: Scene) => void
   /**
+   * Her başarılı yoklama yanıtında (son READY/FAILED dahil) çağrılır; durum aynı kalsa da aşama (`stage`)
+   * değişimini aktarmak için. 503 beklemelerinde çağrılmaz.
+   */
+  onScene?: (scene: Scene) => void
+  /**
    * true ise yoklamada gelen 503 hata sayılmaz: `Retry-After` kadar beklenip yoklamaya devam edilir.
-   * Varsayılan false (eski davranış: 503 → `ApiError(503)`); arayüz bağlanınca (#63) açılır.
+   * Varsayılan false (503 → `ApiError(503)`); sahne sayfası açık kullanır.
    */
   retryOnBusy?: boolean
   /** `retryOnBusy` iken yoklama 503 aldığında çağrılır; `attempt` art arda gelen 503 sayısıdır (başarılı yanıtta sıfırlanır). */
@@ -303,14 +309,15 @@ export interface WaitOptions extends CallOptions {
 }
 
 /**
- * READY ya da FAILED olana kadar yoklar ve son durumu döner. Toplam süre tek bir sinyalle sınırlıdır:
+ * READY ya da FAILED olana kadar yoklar ve son durumu döner; ilk yoklama beklemeden yapılır.
+ * Toplam süre tek bir sinyalle sınırlıdır:
  * asılı kalan istek de dahil zaman aşımında SceneTimeoutError, dış iptalde AbortError fırlatır.
  * `retryOnBusy` iken 503 gelirse `Retry-After` kadar bekleyip aynı kimlikle yoklamaya devam eder;
  * deneme sayısı sınırsızdır, yalnızca toplam zaman aşımı geçerlidir.
  */
 export async function waitForScene(
   id: string,
-  { intervalMs = 1000, timeoutMs = 60000, signal: outer, onStatus, retryOnBusy = false, onRetryWait }: WaitOptions = {},
+  { intervalMs = 1000, timeoutMs = 60000, signal: outer, onStatus, onScene, retryOnBusy = false, onRetryWait }: WaitOptions = {},
 ): Promise<Scene> {
   const t = withTimeout(outer, timeoutMs)
   const { signal } = t
@@ -331,6 +338,7 @@ export async function waitForScene(
       busy = 0
       const scene = await parseOrThrow(res)
       if (signal.aborted) throw abortError()
+      onScene?.(scene)
       if (scene.status !== last) {
         last = scene.status
         onStatus?.(scene.status, scene)

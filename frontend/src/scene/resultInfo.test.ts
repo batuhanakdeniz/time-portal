@@ -1,23 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { formatPlace, placeTitle, providerLabel, safeHttpsUrl, yearNote } from './resultInfo'
+import { formatPlace, providerLabel, safeHttpsUrl } from './resultInfo'
 
-describe('formatPlace / placeTitle', () => {
+describe('formatPlace', () => {
   it('ilçe, il biçimi', () => {
     expect(formatPlace({ province: 'İstanbul', district: 'Beyoğlu' })).toBe('Beyoğlu, İstanbul')
   })
   it('Merkez ilçesi "<İl> Merkez" olur', () => {
     expect(formatPlace({ province: 'Hakkari', district: 'Merkez' })).toBe('Hakkari Merkez')
-  })
-  it('yer yoksa koordinat gösterilir', () => {
-    expect(placeTitle(null, { latitude: 41.9, longitude: 12.5 })).toBe('41.9000° K, 12.5000° D')
-    expect(placeTitle(undefined, { latitude: 41.9, longitude: 12.5 })).toBe('41.9000° K, 12.5000° D')
-  })
-})
-
-describe('yearNote', () => {
-  it('2026 için kısa not', () => expect(yearNote(2026)).toBe('2026 görünümü'))
-  it('başka yıl için açıklama', () => {
-    expect(yearNote(-44)).toBe('Şimdilik 2026 görünümü gösteriliyor. Seçtiğin yıl (MÖ 44) sonraki aşamada gelecek.')
   })
 })
 

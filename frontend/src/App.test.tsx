@@ -654,6 +654,49 @@ describe('App: sahne sayfası', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('yoklamada 503 Retry-After okunur; bekleme bitince yükleme ekranı aşamayla döner', async () => {
+    const fetchMock = stubFetch(
+      sequence(
+        () => json(scene('PENDING'), 202),
+        () => json(scene('RUNNING', { stage: 'IMAGE_SEARCH' })),
+        () => json({ error: 'busy' }, 503, { 'Retry-After': '3' }),
+        () => json(scene('RUNNING', { stage: 'DEPTH' })),
+        () => json(readyScene()),
+      ),
+    )
+    await openBeyogluScene()
+    await tick(1000)
+    expect(screen.getByRole('alert')).toHaveTextContent('Sunucu meşgul, 3 sn sonra yeniden denenecek')
+    await tick(3000)
+    expect(within(loader()!).getByText('Derinlik hesaplanıyor')).toHaveAttribute('aria-current', 'step')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await tick(1000)
+    expect(screen.getByTestId('viewer')).toBeInTheDocument()
+    // Yoklama aynı işi sürdürür: yeni POST yok.
+    expect(posts(fetchMock)).toHaveLength(1)
+    expect(apiCalls(fetchMock).slice(1).every(([u]) => u === '/api/scenes/s1')).toBe(true)
+  })
+
+  it('yoklamada 503 sürerse 120 sn sonunda "Üretim çok uzun sürdü"', async () => {
+    stubFetch((_u, init) => (init?.method === 'POST' ? json(scene('PENDING'), 202) : json({ error: 'busy' }, 503, { 'Retry-After': '5' })))
+    await openBeyogluScene()
+    await tick(119_000)
+    expect(screen.getByRole('alert')).toHaveTextContent('Sunucu meşgul')
+    await tick(2000)
+    expect(screen.getByRole('alert')).toHaveTextContent('Üretim çok uzun sürdü')
+  })
+
+  it.each(['READY', 'FAILED'])('POST hemen %s dönerse yoklama yapılmaz', async (status) => {
+    const fetchMock = stubFetch(() =>
+      json(status === 'READY' ? readyScene() : scene('FAILED', { error: 'no scene for period' }), 200),
+    )
+    await openBeyogluScene()
+    if (status === 'READY') expect(screen.getByTestId('viewer')).toBeInTheDocument()
+    else expect(screen.getByRole('alert')).toHaveTextContent('Bu dönem için sahne henüz yok.')
+    await tick(5000)
+    expect(apiCalls(fetchMock)).toHaveLength(1)
+  })
+
   it('yükleme sırasında "Vazgeç" isteği iptal eder ve seçimi koruyarak haritaya döner', async () => {
     const signals: AbortSignal[] = []
     stubFetch((_u, init) => {
