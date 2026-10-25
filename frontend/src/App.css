@@ -12,11 +12,6 @@
   margin: 0 0 4px;
 }
 
-.app header p {
-  margin: 0;
-  color: #9aa0b4;
-}
-
 .panel {
   min-width: 0;
 }
@@ -123,4 +118,84 @@
 
 .scene-preview img.is-loading {
   opacity: 0.4;
+}
+
+/* --- Sayfalar (#58) --- */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.intro {
+  margin: 0;
+  color: #9aa0b4;
+}
+
+.page-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.yil-rozeti {
+  align-self: flex-start;
+  display: inline-block;
+  padding: 6px 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #e6e8f0;
+  background: #1c2033;
+  border: 1px solid #2c3250;
+  border-radius: 999px;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+
+a.yil-rozeti:hover,
+a.yil-rozeti:focus-visible {
+  border-color: #8ab4ff;
+}
+
+.back {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 20px;
+  color: #e6e8f0;
+  background: #1c2033;
+  border: 1px solid #2c3250;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.route-notice,
+.scene-missing {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 14px;
+  border-radius: 8px;
+  background: #1c2033;
+  overflow-wrap: anywhere;
+}
+
+.route-notice {
+  color: #f87171;
+}
+
+/* --- Sayfa geçişleri (React <ViewTransition>, View Transitions API) --- */
+
+::view-transition-group(yil-rozeti) {
+  animation-duration: 400ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }
