@@ -90,7 +90,7 @@ Güncel durum her zaman GitHub'da: `gh issue list --label F3-akış`, `gh pr lis
 
 **Faz 3 akışı main'de (25.10.2026, #58–#66, #63).** Üç sayfa: `/` höyük kesiti yıl seçimi → `/yil/:yil` altlıksız il/ilçe haritası (gri iller, lacivert seçim, arama yedeği) → `/yil/:yil/yer/:yer/sahne` tam ekran sahne (yükleme ekranı aşamalarla, katmanlar, atıf, Türkçe hatalar, 503 otomatik yeniden deneme). Backend `period`/`stage` döndürüyor; kurgu dönemlerde (tarih öncesi, gelecek) "sahne henüz yok". 2.5B ince nesne bozulması ve derinlik ölçeği düzeltildi. Sözleşme: `docs/FAZ3.md`.
 
-Kalan Faz 3 işleri: #67 üretim pilotu (20 sahne, Mac mini), #77 tek yerde kırpma, #78 yoklama tekilleştirme + ölü kod temizliği.
+Kalan Faz 3 işi: #67 üretim pilotu (20 sahne, Mac mini; sonunda ikinci karar turu). #77 ve #78 birleşti.
 
 Bilinen sınırlar: dönem sahneleri henüz üretilmedi (yorum dönemlerinde bugünkü görsel + not gösteriliyor); uygulama içi tarayıcı panelinde GeoJSON yüklemesi 30–60 sn sürebiliyor (gerçek Chrome'da ölçülmeli); Mapillary logosu kararı açık.
 
