@@ -38,6 +38,13 @@ export function parseYearInput(text: string, defaultEra: Era = 'MS'): YearParseR
   const hasAd = AD.test(s)
   AD.lastIndex = 0
   s = s.replace(AD, ' ').trim()
+  // İşaret çağ sözcüğünden sonra da gelebilir: "MÖ -1200".
+  const innerSign = s.match(/^[-−–]\s*/)
+  if (innerSign) {
+    if (negative) return { ok: false, error: INVALID_MESSAGE }
+    negative = true
+    s = s.slice(innerSign[0].length)
+  }
 
   if (hasBc && hasAd) return { ok: false, error: CONFLICT_MESSAGE }
   if (negative && hasAd) return { ok: false, error: CONFLICT_MESSAGE }

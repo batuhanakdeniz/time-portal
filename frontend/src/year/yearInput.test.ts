@@ -30,6 +30,8 @@ describe('parseYearInput', () => {
     expect(parseYearInput('100.000')).toEqual(ok(100000))
     expect(parseYearInput('−500')).toEqual(ok(-500))
     expect(parseYearInput('-MÖ 5')).toEqual(ok(-5))
+    expect(parseYearInput('MÖ -1200')).toEqual(ok(-1200))
+    expect(parseYearInput('m.ö. − 1.200')).toEqual(ok(-1200))
   })
   it('MÖ/MS anahtarı yalnızca çağ yazılmadıysa uygulanır', () => {
     expect(parseYearInput('1200', 'MÖ')).toEqual(ok(-1200))
@@ -57,6 +59,8 @@ describe('parseYearInput', () => {
     expect(parseYearInput('MÖ')).toEqual({ ok: false, error: INVALID_MESSAGE })
     expect(parseYearInput('MÖ 12 MS')).toEqual({ ok: false, error: CONFLICT_MESSAGE })
     expect(parseYearInput('-12 MS')).toEqual({ ok: false, error: CONFLICT_MESSAGE })
+    expect(parseYearInput('MS -1200')).toEqual({ ok: false, error: CONFLICT_MESSAGE })
+    expect(parseYearInput('--1200')).toEqual({ ok: false, error: INVALID_MESSAGE })
   })
 })
 

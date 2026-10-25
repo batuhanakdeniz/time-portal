@@ -15,7 +15,7 @@ function Controlled({
 }: {
   initial: number
   onChange: (y: number) => void
-  onConfirm: () => void
+  onConfirm: (year: number) => void
 }) {
   const [year, setYear] = useState(initial)
   return (
@@ -25,7 +25,7 @@ function Controlled({
         onChange(y)
         setYear(y)
       }}
-      onConfirm={onConfirm}
+      onConfirm={() => onConfirm(year)}
     />
   )
 }
@@ -322,5 +322,208 @@ describe('hareket', () => {
       vi.advanceTimersByTime(1400)
     })
     expect(slider.scrollTop).toBeCloseTo(yearToOffset(-1200), 0)
+  })
+})
+
+/** Çağrı sırası: "change:Y" ve "confirm:Y" (onay anında üst bileşenin değeri). */
+function setupLog(value: number) {
+  const log: string[] = []
+  const utils = render(
+    <Controlled
+      initial={value}
+      onChange={(y) => log.push(`change:${y}`)}
+      onConfirm={(y) => log.push(`confirm:${y}`)}
+    />,
+  )
+  return { ...utils, log, slider: screen.getByRole('slider') }
+}
+
+const press = (el: Element) => {
+  fireEvent.pointerDown(el)
+  fireEvent.click(el)
+}
+
+describe('onay sırası (reviewer regresyonları)', () => {
+  it('uçuş sürerken "Bu yıla git": yalnızca hedef bildirilir ve onaylanır', () => {
+    vi.useFakeTimers()
+    mockReducedMotion(false)
+    const { log, slider } = setupLog(2026)
+    press(screen.getByRole('button', { name: /Truva/ }))
+    act(() => {
+      vi.advanceTimersByTime(100) // uçuşun ortası
+    })
+    press(screen.getByRole('button', { name: /Bu yıla git/ }))
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(log).toEqual(['change:-1200', 'confirm:-1200'])
+    expect(slider.scrollTop).toBeCloseTo(yearToOffset(-1200), 0)
+  })
+  it('kısayol ve paneldeki işaretçi uçuşu kesmez', () => {
+    vi.useFakeTimers()
+    mockReducedMotion(false)
+    const { log, slider } = setupLog(2026)
+    press(screen.getByRole('button', { name: /Truva/ }))
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'MÖ' }))
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(log).toEqual(['change:-1200'])
+    expect(slider.scrollTop).toBeCloseTo(yearToOffset(-1200), 0)
+  })
+  it('kesite dokunmak uçuşu keser ve durulan yılı bildirir', () => {
+    vi.useFakeTimers()
+    mockReducedMotion(false)
+    const { log, slider } = setupLog(2026)
+    press(screen.getByRole('button', { name: /Truva/ }))
+    act(() => {
+      vi.advanceTimersByTime(400)
+    })
+    fireEvent.pointerDown(slider)
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(log[0]).toBe('change:-1200')
+    expect(log).toHaveLength(2)
+    expect(log[1]).not.toBe('change:-1200')
+  })
+  it('kaydırma durduktan hemen sonra onay: önce kaydırılan yıl bildirilir, onay o yılla', () => {
+    vi.useFakeTimers()
+    const { log, slider } = setupLog(2026)
+    slider.scrollTop = yearToOffset(1453)
+    fireEvent.scroll(slider)
+    act(() => {
+      vi.advanceTimersByTime(30) // debounce bitmeden
+    })
+    press(screen.getByRole('button', { name: /Bu yıla git/ }))
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(log).toEqual(['change:1453', 'confirm:1453'])
+  })
+  it('kesitte Enter de bekleyen kaydırmayı önce bildirir', () => {
+    vi.useFakeTimers()
+    const { log, slider } = setupLog(2026)
+    slider.scrollTop = yearToOffset(1923)
+    fireEvent.scroll(slider)
+    fireEvent.keyDown(slider, { key: 'Enter' })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(log).toEqual(['change:1923', 'confirm:1923'])
+  })
+  it('üst bileşen değeri almazsa onay yine de bir sonraki görevde çağrılır', () => {
+    vi.useFakeTimers()
+    const onChange = vi.fn()
+    const onConfirm = vi.fn()
+    render(<HoyukYearPicker value={2026} onChange={onChange} onConfirm={onConfirm} />)
+    const slider = screen.getByRole('slider')
+    slider.scrollTop = yearToOffset(1453)
+    fireEvent.scroll(slider)
+    fireEvent.keyDown(slider, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith(1453)
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('yazma alanı senkronu', () => {
+  it('gönderimden sonra alan ve MÖ/MS anahtarı ayrıştırılan yıla eşitlenir; ikinci Enter onaylar', () => {
+    const { log } = setupLog(1453)
+    const el = screen.getByRole('textbox', { name: 'Yıl yaz' }) as HTMLInputElement
+    el.focus()
+    fireEvent.change(el, { target: { value: 'mö 1.200' } })
+    fireEvent.submit(el)
+    expect(el).toHaveValue('1200')
+    expect(screen.getByRole('button', { name: 'MÖ' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.submit(el)
+    expect(log).toEqual(['change:-1200', 'confirm:-1200'])
+  })
+})
+
+function mockGaugeRect(container: HTMLElement) {
+  const track = container.querySelector('.hoyuk-gauge-track') as HTMLElement
+  vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({
+    top: 0, left: 0, right: 3, bottom: 600, width: 3, height: 600, x: 0, y: 0, toJSON: () => ({}),
+  } as DOMRect)
+}
+
+describe('gösterge sürüklemesi', () => {
+  it('işaretçi göstergenin dışında bırakılsa da sürükleme biter ve yıl bildirilir', () => {
+    vi.useFakeTimers()
+    const { log, container } = setupLog(2026)
+    mockGaugeRect(container)
+    const gauge = screen.getByTestId('hoyuk-gauge')
+    fireEvent.pointerDown(gauge, { clientY: 150, button: 0 })
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(log).toEqual([]) // sürükleme sürerken bildirim yok
+    fireEvent.pointerUp(window)
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(log).toHaveLength(1)
+    expect(log[0]).toMatch(/^change:\d+$/) // göstergenin üst çeyreği: gelecek
+  })
+  it('yakalama kaybı da sürüklemeyi bitirir', () => {
+    vi.useFakeTimers()
+    const { log, container } = setupLog(2026)
+    mockGaugeRect(container)
+    const gauge = screen.getByTestId('hoyuk-gauge')
+    fireEvent.pointerDown(gauge, { clientY: 0, button: 0 })
+    fireEvent(gauge, new Event('lostpointercapture', { bubbles: true }))
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(log).toHaveLength(1)
+  })
+})
+
+describe('değer eşitlemesi ve temizlik', () => {
+  it('dışarıdan value değişince kesit oraya atlar', () => {
+    vi.useFakeTimers()
+    mockReducedMotion(true)
+    const onChange = vi.fn()
+    const { rerender } = render(<HoyukYearPicker value={2026} onChange={onChange} onConfirm={() => {}} />)
+    const slider = screen.getByRole('slider')
+    expect(slider.scrollTop).toBeCloseTo(yearToOffset(2026), 0)
+    rerender(<HoyukYearPicker value={-1200} onChange={onChange} onConfirm={() => {}} />)
+    expect(slider.scrollTop).toBeCloseTo(yearToOffset(-1200), 0)
+    expect(slider).toHaveAttribute('aria-valuenow', '-1200')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+  it('kaydırma → onChange → value sonrasında yeniden atlamaz', () => {
+    vi.useFakeTimers()
+    const { log, slider } = setupLog(2026)
+    const scrolled = yearToOffset(-50123)
+    slider.scrollTop = scrolled
+    fireEvent.scroll(slider)
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(log).toHaveLength(1)
+    // Yuvarlanmış yıl (MÖ 50.100) değer olarak döndü, ama kesit o yılın tam ofsetine çekilmedi.
+    expect(slider.scrollTop).toBe(scrolled)
+    expect(slider).toHaveAttribute('aria-valuenow', log[0].slice('change:'.length))
+  })
+  it('unmount uçuşu, bekleyen bildirimi ve zamanlayıcıları temizler', () => {
+    vi.useFakeTimers()
+    mockReducedMotion(false)
+    const { log, slider, unmount } = setupLog(2026)
+    press(screen.getByRole('button', { name: /Truva/ }))
+    slider.scrollTop = 100
+    fireEvent.scroll(slider)
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(log).toEqual(['change:-1200'])
   })
 })

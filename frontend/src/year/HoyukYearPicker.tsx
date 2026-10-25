@@ -101,6 +101,8 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
   valueRef.current = year
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const onConfirmRef = useRef(onConfirm)
+  onConfirmRef.current = onConfirm
   const reducedRef = useRef(reduced)
   reducedRef.current = reduced
 
@@ -115,6 +117,9 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
   const visibleArtifacts = useRef(new Set<HTMLElement>())
   const fallbackParallax = useRef(false)
   const dragRef = useRef(false)
+  /** Onaydan hemen önce bildirilen yıl: üst bileşen bu değeri alınca onConfirm çağrılır. */
+  const pendingConfirmRef = useRef<number | null>(null)
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const bands = useMemo(() => layerBands(), [])
   const groundOffset = useMemo(() => yearToOffset(PRESENT_YEAR), [])
@@ -258,6 +263,47 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
     [cancelJump, jumpTo, placeInstant],
   )
 
+  const fireConfirm = useCallback(() => {
+    pendingConfirmRef.current = null
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current)
+      confirmTimerRef.current = null
+    }
+    onConfirmRef.current()
+  }, [])
+
+  /**
+   * Onay: uçuş sürüyorsa hedefe anında yerleş, bekleyen kaydırma bildirimini hemen gönder.
+   * Yeni bir yıl bildirildiyse onConfirm, üst bileşen o değeri aldıktan sonra çağrılır
+   * (aynı olay içinde çağrılsa üst bileşen eski değeri okurdu); almazsa bir sonraki görevde.
+   */
+  const confirm = useCallback(() => {
+    if (animRef.current) {
+      cancelRaf(animRef.current.id)
+      animRef.current = null
+      placeInstant(currentYearRef.current)
+    }
+    if (idleRef.current) {
+      clearTimeout(idleRef.current)
+      idleRef.current = null
+    }
+    if (!dragRef.current) {
+      const y = yearUnderLine()
+      currentYearRef.current = y
+      if (y !== valueRef.current) {
+        pendingConfirmRef.current = y
+        onChangeRef.current(y)
+        if (pendingConfirmRef.current !== null) {
+          confirmTimerRef.current = setTimeout(() => {
+            if (pendingConfirmRef.current !== null) fireConfirm()
+          }, 0)
+        }
+        return
+      }
+    }
+    fireConfirm()
+  }, [fireConfirm, placeInstant, yearUnderLine])
+
   // İlk yerleşim: kesiti başlangıç yılına getir.
   useLayoutEffect(() => {
     placeInstant(valueRef.current)
@@ -265,8 +311,12 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
 
   // Dışarıdan gelen değer değişimi (ör. üst bileşen): kesiti oraya uçur.
   useEffect(() => {
+    if (pendingConfirmRef.current !== null && pendingConfirmRef.current === year) {
+      fireConfirm()
+      return
+    }
     if (year !== currentYearRef.current) jumpTo(year)
-  }, [year, jumpTo])
+  }, [year, jumpTo, fireConfirm])
 
   // Yazma alanı, odakta değilken seçili yılı izler.
   useEffect(() => {
@@ -332,6 +382,10 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
       if (animRef.current) cancelRaf(animRef.current.id)
       if (frameRef.current != null) cancelRaf(frameRef.current)
       if (idleRef.current) clearTimeout(idleRef.current)
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+      animRef.current = null
+      idleRef.current = null
+      confirmTimerRef.current = null
     },
     [],
   )
@@ -340,7 +394,8 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
     if (intro === 'play') setIntro('done')
   }
 
-  const onUserInput = () => {
+  /** Kesit üzerindeki doğrudan kaydırma girdisi (tekerlek, dokunma, işaretçi) uçuşu keser. */
+  const onScrollerInput = () => {
     skipIntro()
     cancelJump()
   }
@@ -375,9 +430,11 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
         select(MAX_YEAR, 'jump')
         break
       case 'Enter':
-        onConfirm()
+        confirm()
         break
       default:
+        // Boşluk vb. tarayıcı kaydırması: uçuşu kes, tarayıcıya bırak.
+        cancelJump()
         return
     }
     e.preventDefault()
@@ -396,6 +453,7 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
 
   const onGaugeDown = (e: PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
+    cancelJump()
     dragRef.current = true
     try {
       e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -407,11 +465,24 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
   const onGaugeMove = (e: PointerEvent<HTMLDivElement>) => {
     if (dragRef.current) scrollToGauge(e.clientY)
   }
-  const onGaugeUp = () => {
+  const onGaugeUp = useCallback(() => {
     if (!dragRef.current) return
     dragRef.current = false
     scheduleIdle()
-  }
+  }, [scheduleIdle])
+
+  // Sürükleme göstergenin dışında biterse (yakalama kaybı, pencere dışı) dragRef takılı kalmasın.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.addEventListener('pointerup', onGaugeUp)
+    window.addEventListener('pointercancel', onGaugeUp)
+    window.addEventListener('blur', onGaugeUp)
+    return () => {
+      window.removeEventListener('pointerup', onGaugeUp)
+      window.removeEventListener('pointercancel', onGaugeUp)
+      window.removeEventListener('blur', onGaugeUp)
+    }
+  }, [onGaugeUp])
 
   const onSubmitYear = (e: FormEvent) => {
     e.preventDefault()
@@ -426,8 +497,12 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
       return
     }
     setInputError(null)
+    // Alanı ayrıştırılan yılla eşitle (MÖ/MS dahil); sonraki Enter eski metni yeniden ayrıştırmaz.
+    const d = yearToDraft(r.year)
+    setDraft(d.text)
+    setEra(d.era)
     // Aynı yıl zaten seçiliyse Enter onaylar; değilse önce oraya gider.
-    if (r.year === valueRef.current && r.year === currentYearRef.current) onConfirm()
+    if (r.year === valueRef.current && r.year === currentYearRef.current) confirm()
     else select(r.year, 'jump')
   }
 
@@ -500,9 +575,9 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
       data-intro={intro}
       data-reduced-motion={reduced ? 'true' : 'false'}
       data-sheet={sheet}
-      onPointerDownCapture={onUserInput}
-      onWheelCapture={onUserInput}
-      onTouchStartCapture={onUserInput}
+      onPointerDownCapture={skipIntro}
+      onWheelCapture={skipIntro}
+      onTouchStartCapture={skipIntro}
       onKeyDownCapture={skipIntro}
     >
       <div className="hoyuk-cut">
@@ -521,6 +596,9 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
           data-testid="hoyuk-scroller"
           onScroll={onScroll}
           onKeyDown={onSliderKeyDown}
+          onPointerDown={onScrollerInput}
+          onWheel={onScrollerInput}
+          onTouchStart={onScrollerInput}
         >
           <div className="hoyuk-pad" />
           <div className="hoyuk-strata" style={{ height: `${TOTAL_HEIGHT}px` }}>
@@ -553,6 +631,7 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
           onPointerMove={onGaugeMove}
           onPointerUp={onGaugeUp}
           onPointerCancel={onGaugeUp}
+          onLostPointerCapture={onGaugeUp}
         >
           <div className="hoyuk-gauge-track" ref={gaugeTrackRef}>
             {PERIODS.slice(1).map((p) => (
@@ -683,7 +762,7 @@ export function HoyukYearPicker({ value, onChange, onConfirm }: HoyukYearPickerP
           </button>
         </div>
 
-        <button type="button" className="hoyuk-confirm" onClick={onConfirm}>
+        <button type="button" className="hoyuk-confirm" onClick={confirm}>
           {confirmLabel} <span aria-hidden="true">→</span>
         </button>
 
