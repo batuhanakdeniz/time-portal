@@ -15,6 +15,13 @@ describe('ViewerSection', () => {
     expect(await screen.findByText('görüntüleyici /p.png Roma')).toBeInTheDocument()
   })
 
+  it('showFullscreenButton görüntüleyiciye geçirilir', async () => {
+    const loader = () =>
+      Promise.resolve({ default: ({ showFullscreenButton }: { showFullscreenButton?: boolean }) => <div>tam ekran {String(showFullscreenButton)}</div> })
+    render(<ViewerSection src="/p.png" alt="Roma" loader={loader} showFullscreenButton={false} />)
+    expect(await screen.findByText('tam ekran false')).toBeInTheDocument()
+  })
+
   it('kind photo → fotoğraf görüntüleyici (photoUrl, depthUrl, alt) yüklenir', async () => {
     const photo = vi.fn(({ photoUrl, depthUrl, alt }: { photoUrl: string; depthUrl?: string; alt?: string }) => (
       <div>foto {photoUrl} {depthUrl} {alt}</div>

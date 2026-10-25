@@ -21,6 +21,8 @@ interface Props {
   src: string
   /** Panoramanın erişilebilir açıklaması (aria-label ve alt yazı). */
   alt: string
+  /** false: kendi tam ekran düğmesi gösterilmez (sahne sayfasında tam ekranı SceneOverlay yönetir). */
+  showFullscreenButton?: boolean
 }
 
 const HELP_TEXT = 'Sürükle ya da ok tuşlarını kullan; Ctrl + tekerlek, çimdik ya da + / - ile yakınlaş.'
@@ -115,12 +117,12 @@ class RenderBoundary extends Component<{ fallback: ReactNode; children: ReactNod
   }
 }
 
-export function PanoramaViewer({ src, alt }: Props) {
+export function PanoramaViewer({ src, alt, showFullscreenButton = true }: Props) {
   const [webgl] = useState(isWebGLAvailable)
   if (!webgl) return <FlatFallback src={src} alt={alt} />
   return (
     <RenderBoundary key={src} fallback={<FlatFallback src={src} alt={alt} />}>
-      <Viewer src={src} alt={alt} />
+      <Viewer src={src} alt={alt} showFullscreenButton={showFullscreenButton} />
     </RenderBoundary>
   )
 }
@@ -190,7 +192,7 @@ function PanoramaSphere({ texture }: { texture: Texture }) {
   )
 }
 
-function Viewer({ src, alt }: Props) {
+function Viewer({ src, alt, showFullscreenButton = true }: Props) {
   const [view, setView] = useState<ViewState>(DEFAULT_VIEW)
   const texture = useTexture(src)
   const surfaceRef = useRef<HTMLDivElement>(null)
@@ -302,7 +304,7 @@ function Viewer({ src, alt }: Props) {
           <CameraRig view={view} />
           {texture.status === 'ready' && <PanoramaSphere texture={texture.texture} />}
         </Canvas>
-        {fsSupported && (
+        {fsSupported && showFullscreenButton && (
           <button
             type="button"
             className="panorama-fullscreen"
