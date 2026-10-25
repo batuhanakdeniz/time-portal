@@ -1,6 +1,18 @@
 // Tipler docs/API.md ile birebir.
 export type SceneStatus = 'PENDING' | 'RUNNING' | 'READY' | 'FAILED'
 
+/** Üretim aşaması; yalnızca RUNNING iken dolu, sırası bu (docs/FAZ3.md §3). */
+export type SceneStage = 'LOCATING' | 'IMAGE_SEARCH' | 'DEPTH' | 'PACKAGING'
+
+/** Seçilen yılın dönem kovası (docs/FAZ3.md §2). */
+export interface ScenePeriod {
+  id: string
+  name: string
+  yearFrom: number
+  yearTo: number
+  confidence: 'gercek' | 'yorum' | 'kurgu'
+}
+
 export interface SceneRequest {
   year: number
   latitude: number
@@ -28,11 +40,15 @@ export interface SceneResult {
   kind?: 'panorama' | 'photo'
   place?: ScenePlace | null
   attribution?: SceneAttribution | null
+  /** Seçilen dönem; yoksa ya da geçersizse alan hiç bulunmaz. */
+  period?: ScenePeriod | null
 }
 
 export interface Scene {
   id: string
   status: SceneStatus
+  /** Yalnızca RUNNING iken dolu; bilinmeyen değer null sayılır. */
+  stage?: SceneStage | null
   request: SceneRequest
   result: SceneResult | null
   error: string | null
@@ -66,7 +82,27 @@ interface CallOptions {
 const STATUSES: readonly string[] = ['PENDING', 'RUNNING', 'READY', 'FAILED']
 const INVALID_RESPONSE = 'Sunucudan geçersiz yanıt'
 
+const STAGES: readonly string[] = ['LOCATING', 'IMAGE_SEARCH', 'DEPTH', 'PACKAGING']
+const CONFIDENCES: readonly string[] = ['gercek', 'yorum', 'kurgu']
+
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null)
+
+/** Bilinmeyen ya da yanlış tipli aşama null sayılır. */
+export function sanitizeStage(raw: unknown): SceneStage | null {
+  return typeof raw === 'string' && STAGES.includes(raw) ? (raw as SceneStage) : null
+}
+
+function sanitizePeriod(raw: unknown): ScenePeriod | null {
+  if (!raw || typeof raw !== 'object') return null
+  const p = raw as Record<string, unknown>
+  const id = str(p.id)
+  const name = str(p.name)
+  const { yearFrom, yearTo, confidence } = p
+  if (!id || !name) return null
+  if (!Number.isInteger(yearFrom) || !Number.isInteger(yearTo)) return null
+  if (typeof confidence !== 'string' || !CONFIDENCES.includes(confidence)) return null
+  return { id, name, yearFrom: yearFrom as number, yearTo: yearTo as number, confidence: confidence as ScenePeriod['confidence'] }
+}
 
 /** Gelen sonucu savunmacı doğrular: yanlış tipli isteğe bağlı alanlar yok sayılır. */
 export function sanitizeResult(raw: unknown): SceneResult | null {
@@ -99,6 +135,8 @@ export function sanitizeResult(raw: unknown): SceneResult | null {
       }
     }
   }
+  const period = sanitizePeriod(r.period)
+  if (period) result.period = period
   return result
 }
 
@@ -114,7 +152,7 @@ async function parseOrThrow(res: Response): Promise<Scene> {
     if (!b || typeof b !== 'object' || typeof b.id !== 'string' || typeof b.status !== 'string' || !STATUSES.includes(b.status)) {
       throw new ApiError(res.status, INVALID_RESPONSE)
     }
-    return { ...(b as Scene), result: sanitizeResult(b.result) }
+    return { ...(b as Scene), stage: sanitizeStage(b.stage), result: sanitizeResult(b.result) }
   }
   let message = `Sunucu hatası (${res.status})`
   try {

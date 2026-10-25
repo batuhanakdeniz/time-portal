@@ -8,6 +8,10 @@ describe('errorMessages', () => {
     expect(failedMessage('whatever')).toBe('Sahne üretilemedi. Biraz sonra tekrar dene.')
     expect(failedMessage(null)).toBe('Sahne üretilemedi. Biraz sonra tekrar dene.')
   })
+  it('dönem sahnesi yoksa Türkçe mesaj verilir', () => {
+    expect(failedMessage('no scene for period')).toBe('Bu dönem için sahne henüz yok.')
+    expect(failedMessage('No scene for period')).toBe('Sahne üretilemedi. Biraz sonra tekrar dene.')
+  })
   it('400 metinleri Türkçeye çevrilir', () => {
     expect(badRequestMessage('location outside supported area')).toBe("Şimdilik yalnızca Türkiye'deki konumlar destekleniyor.")
     expect(badRequestMessage('year out of range')).toBe('İstek geçersiz.')

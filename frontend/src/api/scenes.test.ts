@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createScene, sanitizeResult, SceneTimeoutError, waitForScene, type Scene, type SceneStatus } from './scenes'
+import { ApiError, createScene, getScene, sanitizeResult, sanitizeStage, SceneTimeoutError, waitForScene, type Scene, type SceneStatus } from './scenes'
 
 const req = { year: -44, latitude: 41.9, longitude: 12.5 }
 
@@ -104,6 +104,64 @@ describe('sanitizeResult', () => {
     expect(sanitizeResult(null)).toBeNull()
     expect(sanitizeResult('x')).toBeNull()
     expect(sanitizeResult({ depthUrl: '/d.png' })).toBeNull()
+  })
+})
+
+describe('period', () => {
+  const ok = { panoramaUrl: '/p.jpg', depthUrl: '/d.png' }
+  const period = { id: 'osmanli-klasik', name: 'Osmanlı klasik', yearFrom: 1453, yearTo: 1700, confidence: 'yorum' }
+
+  it('geçerli dönem korunur', () => {
+    expect(sanitizeResult({ ...ok, period })?.period).toEqual(period)
+    const mo = { id: 'demir', name: 'Demir Çağı', yearFrom: -1200, yearTo: -550, confidence: 'yorum' }
+    expect(sanitizeResult({ ...ok, period: mo })?.period).toEqual(mo)
+  })
+  it('dönem yoksa alan hiç eklenmez', () => {
+    expect(sanitizeResult(ok)).not.toHaveProperty('period')
+    expect(sanitizeResult({ ...ok, period: null })).not.toHaveProperty('period')
+  })
+  it('eksik ya da yanlış tipli dönem yok sayılır', () => {
+    const bad: unknown[] = [
+      'osmanli-klasik',
+      5,
+      [],
+      { ...period, id: '' },
+      { ...period, id: 3 },
+      { ...period, name: undefined },
+      { ...period, yearFrom: '1453' },
+      { ...period, yearTo: 1700.5 },
+      { ...period, yearFrom: Number.NaN },
+      { ...period, confidence: 'kesin' },
+      { ...period, confidence: undefined },
+    ]
+    for (const p of bad) {
+      const r = sanitizeResult({ ...ok, period: p })
+      expect(r).not.toBeNull()
+      expect(r).not.toHaveProperty('period')
+    }
+  })
+  it('dönem geçersiz olsa da diğer alanlar korunur', () => {
+    const r = sanitizeResult({ ...ok, kind: 'photo', place: { province: 'İstanbul', district: 'Beyoğlu' }, period: { id: 'x' } })
+    expect(r?.kind).toBe('photo')
+    expect(r?.place).toEqual({ province: 'İstanbul', district: 'Beyoğlu' })
+  })
+})
+
+describe('stage', () => {
+  it('bilinen aşamalar korunur, diğerleri null', () => {
+    for (const s of ['LOCATING', 'IMAGE_SEARCH', 'DEPTH', 'PACKAGING']) expect(sanitizeStage(s)).toBe(s)
+    for (const s of [undefined, null, '', 'locating', 'UPLOADING', 3, {}]) expect(sanitizeStage(s)).toBeNull()
+  })
+  it('yanıttaki stage ayrıştırılır; yoksa ya da bilinmiyorsa null', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json(scene('RUNNING', { stage: 'DEPTH' })))
+      .mockResolvedValueOnce(json({ ...scene('RUNNING'), stage: 'BOGUS' }))
+      .mockResolvedValueOnce(json(scene('PENDING')))
+    vi.stubGlobal('fetch', fetchMock)
+    expect((await getScene('s1')).stage).toBe('DEPTH')
+    expect((await getScene('s1')).stage).toBeNull()
+    expect((await getScene('s1')).stage).toBeNull()
   })
 })
 
