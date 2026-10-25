@@ -23,3 +23,8 @@ node_modules/
 
 # yerel üretilen yapıtlar (backend)
 backend/data/
+
+# üretim pilotu (#67): yerel Python ortamı ve önbellekler
+backend/tools/pilot/.venv/
+backend/tools/pilot/.pytest_cache/
+__pycache__/
