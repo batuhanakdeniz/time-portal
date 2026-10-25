@@ -54,9 +54,15 @@ export function counterYear(from: number, to: number, t: number): number {
   return v === 0 ? (to < 0 ? -1 : 1) : v
 }
 
+/** formatYear'ın kabul ettiği yıl: tamsayı ve 0 değil. */
+export function isValidYear(year: number): boolean {
+  return Number.isInteger(year) && year !== 0
+}
+
 function useCountdownYear(target: number, reduced: boolean): number {
   const [shown, setShown] = useState(() => (reduced ? target : COUNTER_FROM))
   useEffect(() => {
+    if (!isValidYear(target)) return
     if (reduced) {
       setShown(target)
       return
@@ -79,6 +85,8 @@ function useCountdownYear(target: number, reduced: boolean): number {
 export function LoadingScreen({ stage, elapsedMs, targetYear, onCancel }: LoadingScreenProps) {
   const reduced = useReducedMotion()
   const shown = useCountdownYear(targetYear, reduced)
+  // Geçersiz hedef yılda (0, NaN, kesirli) sayaç ve yol satırı gizlenir; ekran yine çalışır.
+  const validTarget = isValidYear(targetYear)
   const [calmTimer, setCalmTimer] = useState(false)
   useEffect(() => {
     const id = setTimeout(() => setCalmTimer(true), CALM_AFTER_MS)
@@ -97,11 +105,13 @@ export function LoadingScreen({ stage, elapsedMs, targetYear, onCancel }: Loadin
         {[0, 1, 2, 3].map((i) => (
           <span key={i} className="loading-ring" style={{ '--i': i } as CSSProperties} />
         ))}
-        <span className="loading-counter">{formatYear(shown)}</span>
+        {validTarget && isValidYear(shown) && <span className="loading-counter">{formatYear(shown)}</span>}
       </div>
-      <p className="loading-route">
-        {formatYear(COUNTER_FROM)} → {formatYear(targetYear)}
-      </p>
+      {validTarget && (
+        <p className="loading-route">
+          {formatYear(COUNTER_FROM)} → {formatYear(targetYear)}
+        </p>
+      )}
 
       <div className="loading-status" role="status">
         <p className="loading-title">Zamanda yolculuk sürüyor…</p>

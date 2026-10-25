@@ -66,6 +66,22 @@ export function attributionLine(attribution?: SceneAttribution | null): string {
   return `Görsel: ${parts.join(' · ')}`
 }
 
+/**
+ * Paylaşılacak bağlantı: yalnızca https: ya da aynı kökenli göreli adres (mutlak hale getirilir);
+ * geçersiz ya da yoksa geçerli sayfa adresi.
+ */
+export function safeShareUrl(shareUrl: string | null | undefined, base: string = window.location.href): string {
+  if (!shareUrl) return base
+  try {
+    const isRelative = !/^[a-z][a-z0-9+.-]*:/i.test(shareUrl) && !shareUrl.startsWith('//')
+    const u = new URL(shareUrl, base)
+    if (isRelative) return u.origin === new URL(base).origin ? u.href : base
+    return u.protocol === 'https:' && u.hostname !== '' ? u.href : base
+  } catch {
+    return base
+  }
+}
+
 export const NOTE_CHIP = 'Yapay zekâ yorumu değil: 2026 fotoğrafı + derinlik'
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
@@ -250,7 +266,7 @@ export function SceneOverlay({
 
   async function handleShare() {
     onShare()
-    const url = shareUrl ?? window.location.href
+    const url = safeShareUrl(shareUrl)
     if (canShare) {
       try {
         await navigator.share({ title: 'Time Portal', text: `${title} · ${yearLabel}`, url })
@@ -340,7 +356,7 @@ export function SceneOverlay({
             aria-controls={attributionId}
             onClick={() => setAttributionOpen((o) => !o)}
           >
-            Atıf {attributionOpen ? '▴' : '▾'}
+            Atıf <span aria-hidden="true">{attributionOpen ? '▴' : '▾'}</span>
           </button>
         </div>
         {attributionOpen && (

@@ -133,6 +133,25 @@ describe('LoadingScreen hareket', () => {
     for (let t = 0; t <= 1; t += 0.001) expect(counterYear(2026, -1200, t)).not.toBe(0)
   })
 
+  it.each([0, Number.NaN, 1453.5, Number.POSITIVE_INFINITY])('geçersiz hedef yıl (%s) fırlatmaz; sayaç ve yol satırı gizlenir', (targetYear) => {
+    const { counter, root } = renderLoading({ targetYear, stage: 'DEPTH', elapsedMs: 3000 })
+    expect(counter).toBeNull()
+    expect(root.querySelector('.loading-route')).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(root.querySelector('.loading-counter')).toBeNull()
+    expect(screen.getByText('Derinlik hesaplanıyor')).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByText('3 sn · genelde 10–35 sn')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Vazgeç' })).toBeInTheDocument()
+  })
+
+  it('reduced motion’da geçersiz hedef yıl da fırlatmaz', () => {
+    mockReducedMotion(true)
+    const { counter } = renderLoading({ targetYear: 0 })
+    expect(counter).toBeNull()
+  })
+
   it('counterYear uçları ve ease-out', () => {
     expect(counterYear(2026, 1453, 0)).toBe(2026)
     expect(counterYear(2026, 1453, 1)).toBe(1453)

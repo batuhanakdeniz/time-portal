@@ -5,6 +5,7 @@ import {
   attributionLine,
   overlayPlaceShort,
   overlayPlaceTitle,
+  safeShareUrl,
   SceneOverlay,
   sceneYearNote,
   type SceneOverlayProps,
@@ -359,15 +360,39 @@ describe('paylaş', () => {
   })
 })
 
+describe('paylaşım bağlantısı doğrulaması', () => {
+  const base = 'https://timeportal.test/yil/1453/yer/34/sahne'
+  it('https: ve aynı kökenli göreli adres kabul edilir', () => {
+    expect(safeShareUrl('https://example.test/a', base)).toBe('https://example.test/a')
+    expect(safeShareUrl('/yil/1453/yer/34-beyoglu/sahne', base)).toBe('https://timeportal.test/yil/1453/yer/34-beyoglu/sahne')
+  })
+  it('geçersiz, güvensiz ya da başka kökenli adres sayfa adresine düşer', () => {
+    for (const bad of [undefined, null, '', 'javascript:alert(1)', 'data:text/html,x', 'http://example.test/a', 'https://', 'mailto:a@b.c']) {
+      expect(safeShareUrl(bad, base)).toBe(base)
+    }
+  })
+  it('geçersiz shareUrl ile paylaşım sayfa adresini kullanır', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, share: undefined, clipboard: { writeText } })
+    renderOverlay({ shareUrl: 'javascript:alert(1)' })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Bağlantıyı kopyala' }))
+    })
+    expect(writeText).toHaveBeenCalledWith(window.location.href)
+  })
+})
+
 describe('atıf', () => {
   it('tek satır her zaman görünür; "Atıf ▾" tam atfı açar', () => {
     renderOverlay()
     expect(screen.getByText('Görsel: Ad Soyad · CC BY-SA 4.0 · Mapillary')).toBeInTheDocument()
-    const toggle = screen.getByRole('button', { name: 'Atıf ▾' })
+    const toggle = screen.getByRole('button', { name: 'Atıf' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveTextContent('Atıf ▾')
     expect(screen.queryByRole('link', { name: 'OpenStreetMap katkıcıları' })).toBeNull()
     fireEvent.click(toggle)
-    expect(screen.getByRole('button', { name: 'Atıf ▴' })).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveTextContent('Atıf ▴')
     expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/')
     expect(screen.getByRole('link', { name: 'OpenStreetMap katkıcıları' })).toBeInTheDocument()
   })
