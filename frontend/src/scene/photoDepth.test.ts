@@ -4,15 +4,23 @@ import {
   applyPhotoKey,
   applyPhotoPinch,
   applyPhotoWheel,
+  buildDepthOffsets,
   buildDisplacement,
   cameraDistance,
   chooseGridSize,
   DEFAULT_PHOTO_VIEW,
+  DEPTH_CLIP_HIGH,
+  DEPTH_CLIP_LOW,
+  DEPTH_MIN_RANGE,
   DEPTH_SCALE,
+  EDGE_MARGIN,
   edgeAttenuation,
   effectiveRotation,
   GRID_DESKTOP_COLS,
   GRID_MOBILE_COLS,
+  limitDepthSlope,
+  MAX_DEPTH_SLOPE,
+  normalizeDepth,
   orbitPosition,
   overscanScale,
   smoothToward,
@@ -265,5 +273,251 @@ describe('buildDisplacement', () => {
   it('eksik/bozuk değerler 0 ile 255 arasında sınırlanır', () => {
     const out = buildDisplacement([999, NaN], cols, rows)
     expect(out.every((x) => x >= 0 && x <= DEPTH_SCALE)).toBe(true)
+  })
+})
+
+/** Komşu köşe farklarının en büyüğü: yatay/dikey ve PlaneGeometry'nin çaprazı (i,j+1)-(i+1,j) dahil. */
+function maxNeighborDiff(z: ArrayLike<number>, cols: number, rows: number): { axis: number; diag: number } {
+  const w = cols + 1
+  let axis = 0
+  let diag = 0
+  for (let j = 0; j <= rows; j++) {
+    for (let i = 0; i <= cols; i++) {
+      const idx = j * w + i
+      if (i < cols) axis = Math.max(axis, Math.abs(z[idx + 1] - z[idx]))
+      if (j < rows) axis = Math.max(axis, Math.abs(z[idx + w] - z[idx]))
+      if (i < cols && j < rows) {
+        diag = Math.max(diag, Math.abs(z[idx + w + 1] - z[idx]), Math.abs(z[idx + w] - z[idx + 1]))
+      }
+    }
+  }
+  return { axis, diag }
+}
+
+/** Belirlenimci sözde rastgele sayı üreteci (testler tekrarlanabilir kalsın). */
+function rng(seed: number) {
+  let s = seed >>> 0
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0
+    return s / 2 ** 32
+  }
+}
+
+/** Korkuluk benzeri derinlik: uzak arka plan (10), her 3 sütunda bir 1 sütun genişliğinde yakın çubuk (200). */
+function railing(cols: number, rows: number): number[] {
+  const out: number[] = []
+  for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) out.push(i % 3 === 0 ? 200 : 10)
+  return out
+}
+
+describe('normalizeDepth (5–95 yüzdelik kırpma)', () => {
+  it('varsayılan kırpma aralığı 5–95', () => {
+    expect(DEPTH_CLIP_LOW).toBe(5)
+    expect(DEPTH_CLIP_HIGH).toBe(95)
+  })
+
+  it('uç %5 dilimleri kırpar, kalan aralığı [0,255]e yayar', () => {
+    const values: number[] = []
+    for (let v = 100; v < 150; v++) for (let k = 0; k < 20; k++) values.push(v)
+    for (let k = 0; k < 10; k++) values.push(0, 255) // ~%1 aykırı değer her iki uçta
+    const out = normalizeDepth(values)
+    expect(out[0]).toBe(0) // 100 = p5 → 0
+    expect(out[values.indexOf(149)]).toBe(255) // 149 = p95 → 255
+    expect(out[values.indexOf(0)]).toBe(0)
+    expect(out[values.indexOf(255)]).toBe(255)
+    expect(out[values.indexOf(125)]).toBeGreaterThan(100)
+    expect(out[values.indexOf(125)]).toBeLessThan(155)
+  })
+
+  it('sırayı korur (monoton) ve her zaman [0,255] içinde kalır', () => {
+    const r = rng(7)
+    const values = Array.from({ length: 500 }, () => Math.floor(r() * 256))
+    const out = normalizeDepth(values)
+    const order = values.map((v, i) => [v, out[i]] as const).sort((a, b) => a[0] - b[0])
+    for (let i = 1; i < order.length; i++) expect(order[i][1]).toBeGreaterThanOrEqual(order[i - 1][1])
+    expect(out.every((x) => x >= 0 && x <= 255)).toBe(true)
+  })
+
+  it('yüzdelikler sıralı dizideki gerçek konumdan alınır: 0..99da p5=5 → 0, p95=95 → 255, 50 → 127,5', () => {
+    const values = Array.from({ length: 100 }, (_, i) => i)
+    const out = normalizeDepth(values)
+    expect(out[5]).toBe(0)
+    expect(out[4]).toBe(0)
+    expect(out[95]).toBe(255)
+    expect(out[99]).toBe(255)
+    expect(out[50]).toBeCloseTo(127.5, 4)
+    expect(out[6]).toBeGreaterThan(0)
+    expect(out[94]).toBeLessThan(255)
+  })
+
+  it('neredeyse düz haritada kazanç sınırlı: aralık DEPTH_MIN_RANGEden darsa gürültü tam aralığa yayılmaz', () => {
+    expect(DEPTH_MIN_RANGE).toBe(24)
+    const r = rng(3)
+    const noisy = Array.from({ length: 400 }, () => 120 + Math.floor(r() * 11)) // 120..130: 10 gri düzeyi
+    const out = normalizeDepth(noisy)
+    const max = Math.max(...out)
+    expect(max).toBeLessThanOrEqual((255 * 10) / DEPTH_MIN_RANGE + 1e-3)
+    expect(max).toBeGreaterThan(50) // gerçek kabartma yine görünür
+    // Aralık DEPTH_MIN_RANGE ve üstündeyse tam [0,255] kullanılır.
+    const wide = Array.from({ length: 400 }, (_, i) => 100 + (i % 40))
+    expect(Math.max(...normalizeDepth(wide))).toBe(255)
+  })
+
+  it('düz harita (aralık yok) kabartmasız olur, bozuk değerler güvenle işlenir', () => {
+    expect(Array.from(normalizeDepth([200, 200, 200]))).toEqual([0, 0, 0])
+    const out = normalizeDepth([NaN, Infinity, -5, 999, 128])
+    expect(out.every((x) => Number.isFinite(x) && x >= 0 && x <= 255)).toBe(true)
+    expect(normalizeDepth([]).length).toBe(0)
+  })
+})
+
+describe('limitDepthSlope (eğim sınırı)', () => {
+  it('tek sivri köşe (ince nesne) komşusundan en fazla bir adım önde kalır', () => {
+    const cols = 10
+    const rows = 10
+    const z = new Array((cols + 1) * (rows + 1)).fill(0)
+    const mid = 5 * (cols + 1) + 5
+    z[mid] = 10
+    const out = limitDepthSlope(z, cols, rows, 1)
+    expect(out[mid]).toBe(1)
+    expect(maxNeighborDiff(out, cols, rows).axis).toBeLessThanOrEqual(1)
+  })
+
+  it('rastgele alanda komşu farkı adımı, çapraz fark adım·√2yi aşmaz; hiçbir köşe yükselmez', () => {
+    const cols = 40
+    const rows = 30
+    const r = rng(42)
+    const z = Array.from({ length: (cols + 1) * (rows + 1) }, () => r() * 0.45)
+    const step = 0.01
+    const out = limitDepthSlope(z, cols, rows, step)
+    const d = maxNeighborDiff(out, cols, rows)
+    expect(d.axis).toBeLessThanOrEqual(step + 1e-6)
+    expect(d.diag).toBeLessThanOrEqual(step * Math.SQRT2 + 1e-6)
+    for (let i = 0; i < z.length; i++) expect(out[i]).toBeLessThanOrEqual(z[i] + 1e-7)
+  })
+
+  it('büyük nesnenin iç bölgesi derinliğini korur, sınırında rampa oluşur', () => {
+    const cols = 30
+    const rows = 30
+    const w = cols + 1
+    const z = new Array(w * w).fill(0)
+    for (let j = 5; j <= 25; j++) for (let i = 5; i <= 25; i++) z[j * w + i] = 4
+    const out = limitDepthSlope(z, cols, rows, 1)
+    expect(out[15 * w + 15]).toBe(4)
+    expect(out[15 * w + 5]).toBe(1) // dış sınır: 0 + 1 adım
+    expect(out[15 * w + 6]).toBe(2)
+    expect(out[15 * w + 8]).toBe(4)
+  })
+
+  it('idempotent: ikinci uygulama sonucu değiştirmez', () => {
+    const cols = 30
+    const rows = 20
+    const r = rng(9)
+    const z = Array.from({ length: (cols + 1) * (rows + 1) }, () => r() * 0.45)
+    const once = limitDepthSlope(z, cols, rows, 0.02)
+    const twice = limitDepthSlope(once, cols, rows, 0.02)
+    expect(Array.from(twice)).toEqual(Array.from(once))
+  })
+
+  it('kenarda 0 olan köşeler 0 kalır; negatif/bozuk adım düzleştirir ama çökmez', () => {
+    const cols = 6
+    const rows = 4
+    const z = buildDisplacement(new Array(35).fill(255), cols, rows)
+    const out = limitDepthSlope(z, cols, rows, 0.05)
+    for (let i = 0; i <= cols; i++) expect(out[i]).toBe(0)
+    expect(limitDepthSlope(z, cols, rows, NaN).every((x) => x === 0)).toBe(true)
+    expect(limitDepthSlope(z, cols, rows, -1).every((x) => x === 0)).toBe(true)
+  })
+})
+
+describe('buildDepthOffsets (görüntüleyici hattı)', () => {
+  it('varsayılan eğim sınırı 1 hücre', () => {
+    expect(MAX_DEPTH_SLOPE).toBe(1)
+  })
+
+  it('korkuluk: önce komşu z farkı 10 hücreden büyük, sonra en fazla 1 hücre; ±15° yawda uzama ≤ sin(15°) hücre', () => {
+    const aspect = 4 / 3
+    const { cols, rows } = chooseGridSize(aspect, false)
+    const cell = Math.min((2 * aspect) / cols, 2 / rows)
+    const depth = railing(cols, rows)
+    const before = maxNeighborDiff(buildDisplacement(depth, cols, rows), cols, rows).axis / cell
+    const after = maxNeighborDiff(buildDepthOffsets(depth, cols, rows, aspect), cols, rows)
+    expect(before).toBeGreaterThan(10)
+    expect(after.axis / cell).toBeLessThanOrEqual(1 + 1e-4)
+    expect(after.diag / cell).toBeLessThanOrEqual(Math.SQRT2 + 1e-4)
+    const stretchCells = (after.axis * Math.sin((YAW_LIMIT * Math.PI) / 180)) / cell
+    expect(stretchCells).toBeLessThan(0.27)
+  })
+
+  it('eğim sınırı en-boy oranı ve ızgaraya göre ölçeklenir; kenar bandında yalnızca sönümleme rampası kadar gevşer', () => {
+    for (const aspect of [1, 4 / 3, 16 / 9, 2]) {
+      for (const mobile of [false, true]) {
+        const { cols, rows } = chooseGridSize(aspect, mobile)
+        const cell = Math.min((2 * aspect) / cols, 2 / rows)
+        // Sol %10 uzak, gerisi yakın + korkuluk: hem süreksizlik hem kenar bandına dayanan büyük yakın bölge.
+        const w = cols + 1
+        const depth = railing(cols, rows).map((v, k) => ((k % w) < cols * 0.1 ? 0 : k % 7 === 0 ? v : 255))
+        const out = buildDepthOffsets(depth, cols, rows, aspect)
+        const inBand = (i: number, j: number) =>
+          Math.min(i / cols, 1 - i / cols) < EDGE_MARGIN || Math.min(j / rows, 1 - j / rows) < EDGE_MARGIN
+        // smoothstep türevi en fazla 1,5 → bir köşe adımında sönümleme en fazla 1,5/(EDGE_MARGIN·min(cols,rows)) değişir.
+        const bandBound = cell * MAX_DEPTH_SLOPE + (DEPTH_SCALE * 1.5) / (EDGE_MARGIN * Math.min(cols, rows))
+        let interior = 0
+        let band = 0
+        for (let j = 0; j <= rows; j++) {
+          for (let i = 0; i <= cols; i++) {
+            const idx = j * w + i
+            for (const [n, ni, nj] of [[idx + 1, i + 1, j], [idx + w, i, j + 1]] as const) {
+              if (ni > cols || nj > rows) continue
+              const d = Math.abs(out[n] - out[idx])
+              if (inBand(i, j) || inBand(ni, nj)) band = Math.max(band, d)
+              else interior = Math.max(interior, d)
+            }
+          }
+        }
+        expect(interior).toBeLessThanOrEqual(cell * MAX_DEPTH_SLOPE + 1e-6)
+        expect(band).toBeLessThanOrEqual(bandBound + 1e-6)
+      }
+    }
+  })
+
+  it('kenar sönümlemesi aşındırmadan sonra: tam derinliğe kenar bandı içinde ulaşılır (rampa içeri yayılmaz)', () => {
+    const aspect = 4 / 3
+    const { cols, rows } = chooseGridSize(aspect, false)
+    const w = cols + 1
+    const depth: number[] = []
+    for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) depth.push(i < cols * 0.1 ? 0 : 255)
+    const out = buildDepthOffsets(depth, cols, rows, aspect)
+    const mid = Math.round(cols / 2)
+    let reach = -1
+    for (let j = 0; j <= rows && reach < 0; j++) if (out[j * w + mid] >= 0.99 * DEPTH_SCALE) reach = j
+    expect(reach).toBeGreaterThan(0)
+    expect(reach).toBeLessThanOrEqual(Math.ceil(EDGE_MARGIN * rows))
+    // Alt kenardaki zemin de aynı satırda tam derinlikte.
+    expect(out[(rows - reach) * w + mid]).toBeGreaterThanOrEqual(0.99 * DEPTH_SCALE)
+  })
+
+  it('geniş yakın bölge tam derinliğini korur, kenarlar düzlemde kalır', () => {
+    const aspect = 1.5
+    const { cols, rows } = chooseGridSize(aspect, false)
+    const w = cols + 1
+    const depth: number[] = []
+    for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) depth.push(i > cols * 0.2 && i < cols * 0.8 && j > rows * 0.2 && j < rows * 0.8 ? 255 : 0)
+    const out = buildDepthOffsets(depth, cols, rows, aspect)
+    expect(out[Math.round(rows / 2) * w + Math.round(cols / 2)]).toBeCloseTo(DEPTH_SCALE)
+    for (let i = 0; i <= cols; i++) {
+      expect(out[i]).toBe(0)
+      expect(out[rows * w + i]).toBe(0)
+    }
+    for (let j = 0; j <= rows; j++) {
+      expect(out[j * w]).toBe(0)
+      expect(out[j * w + cols]).toBe(0)
+    }
+  })
+
+  it('geçersiz en-boy oranında ve bozuk girdide sonlu ve [0, DEPTH_SCALE] içinde kalır', () => {
+    const out = buildDepthOffsets([NaN, 999, -1], 20, 10, NaN)
+    expect(out.length).toBe(21 * 11)
+    expect(out.every((x) => Number.isFinite(x) && x >= 0 && x <= DEPTH_SCALE)).toBe(true)
   })
 })

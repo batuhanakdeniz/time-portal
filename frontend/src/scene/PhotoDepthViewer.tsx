@@ -15,7 +15,7 @@ import {
   applyPhotoKey,
   applyPhotoPinch,
   applyPhotoWheel,
-  buildDisplacement,
+  buildDepthOffsets,
   cameraDistance,
   chooseGridSize,
   DEFAULT_PHOTO_VIEW,
@@ -218,7 +218,7 @@ function PhotoPlane({
   const geometry = useMemo(() => {
     const g = new PlaneGeometry(2 * aspect, 2, cols, rows)
     if (depth) {
-      const z = buildDisplacement(depth, cols, rows)
+      const z = buildDepthOffsets(depth, cols, rows, aspect)
       for (let i = 0; i < z.length; i++) g.attributes.position.setZ(i, z[i])
       g.attributes.position.needsUpdate = true
     }
