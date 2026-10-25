@@ -212,52 +212,11 @@ export function buildDisplacement(depth: ArrayLike<number>, cols: number, rows: 
   return out
 }
 
-/** Derinlik normalizasyonu için kırpma yüzdelikleri: uç %5'lik dilimler (gökyüzü gürültüsü, tek tük parlak pikseller) atılır. */
-export const DEPTH_CLIP_LOW = 5
-export const DEPTH_CLIP_HIGH = 95
 /**
  * Komşu iki köşe arasındaki en büyük z farkı, hücre genişliği cinsinden (eğim sınırı). 1 = en dik yüzey 45°;
  * ±15° yaw'da bir köşe çifti ekranda en fazla sin(15°) ≈ 0,26 hücre ek uzunluk kazanır.
  */
 export const MAX_DEPTH_SLOPE = 1
-/** Normalizasyonda yüzdelik aralığının alt sınırı (gri düzeyi): neredeyse düz haritada gürültü tam aralığa yayılmaz. */
-export const DEPTH_MIN_RANGE = 24
-
-/**
- * Derinliği [low, high] yüzdelik aralığına kırpıp [0,255]'e yeniden yayar. Yüzdelikler 256 kutulu histogramdan
- * gelir (p. yüzdelik = sıralı dizide ⌊p·n/100⌋. eleman). Kazanç 255 / max(aralık, minRange) ile sınırlıdır:
- * aralığı minRange'den dar (neredeyse düz) haritada sonuç [0, 255·aralık/minRange] içinde kalır, düz harita 0 olur.
- */
-export function normalizeDepth(
-  depth: ArrayLike<number>,
-  low = DEPTH_CLIP_LOW,
-  high = DEPTH_CLIP_HIGH,
-  minRange = DEPTH_MIN_RANGE,
-): Float32Array {
-  const n = depth.length
-  const values = new Float32Array(n)
-  const hist = new Uint32Array(256)
-  for (let i = 0; i < n; i++) {
-    const v = clamp(finite(depth[i] ?? 0), 0, 255)
-    values[i] = v
-    hist[Math.round(v)]++
-  }
-  if (n === 0) return values
-  const percentile = (p: number) => {
-    const target = Math.min(n - 1, Math.floor((clamp(p, 0, 100) / 100) * n))
-    let seen = 0
-    for (let b = 0; b < 256; b++) {
-      seen += hist[b]
-      if (seen > target) return b
-    }
-    return 255
-  }
-  const lo = percentile(Math.min(low, high))
-  const hi = percentile(Math.max(low, high))
-  const k = 255 / Math.max(hi - lo, Math.max(1, finite(minRange)))
-  for (let i = 0; i < n; i++) values[i] = clamp((values[i] - lo) * k, 0, 255)
-  return values
-}
 
 /**
  * Eğim sınırı: komşu (yatay/dikey) köşeler arasındaki z farkı en fazla maxStep, çapraz komşularda maxStep·√2 olur.
@@ -303,7 +262,11 @@ export function limitDepthSlope(z: ArrayLike<number>, cols: number, rows: number
 }
 
 /**
- * Görüntüleyicinin kullandığı tam hat: 5–95 yüzdelik normalizasyonu → itme → eğim sınırı → kenar sönümleme çarpanı.
+ * Görüntüleyicinin kullandığı tam hat: itme → eğim sınırı → kenar sönümleme çarpanı.
+ * depth: backend'in derinlik PNG'si, (cols+1)*(rows+1) adet [0,255] gri değeri; açık = yakın. Yüzdelik kırpma ve
+ * gamma yalnızca backend'de yapılır (#74, `DepthMath.normalizeToGray`); burada gri doğrudan [0, scale]'e taşınır,
+ * ek kazanç uygulanmaz (#77). Düz/gürültülü haritada da kazanç 1'dir; gürültünün ızgaradaki sivri uçlarını eğim
+ * sınırı bastırır.
  * aspect: düzlemin en/boy oranı (düzlem 2·aspect × 2). Eğim sınırı hücre boyuna göre hesaplanır, böylece ızgara
  * çözünürlüğü ve görsel oranı ne olursa olsun bir köşe komşusundan en fazla ~1 hücre öne çıkabilir.
  * Sönümleme aşındırmadan SONRA uygulanır: önce uygulansaydı kenardaki 0 köşeler aşındırmanın kaynağı olur ve 45°
@@ -321,11 +284,10 @@ export function buildDepthOffsets(
 ): Float32Array {
   const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 1.5
   const cell = Math.min((2 * a) / Math.max(cols, 1), 2 / Math.max(rows, 1))
-  const normalized = normalizeDepth(depth)
   const w = cols + 1
   const h = rows + 1
   const raw = new Float32Array(w * h)
-  for (let i = 0; i < raw.length; i++) raw[i] = ((normalized[i] ?? 0) / 255) * scale
+  for (let i = 0; i < raw.length; i++) raw[i] = (clamp(finite(depth[i] ?? 0), 0, 255) / 255) * scale
   const out = limitDepthSlope(raw, cols, rows, slope * cell)
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) out[j * w + i] *= edgeAttenuation(i / cols, j / rows)
