@@ -1,0 +1,197 @@
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: radial-gradient(circle at 50% 38%, #151a2e 0%, #0b0d14 65%);
+  color: #e6e8f0;
+  text-align: center;
+  overflow-y: auto;
+}
+
+/* 4 eş merkezli halka: 0,6 → 1,6 ölçek + opaklık, 1,6 sn, 0,4 sn kaydırmalı başlangıç. */
+.loading-rings {
+  position: relative;
+  width: min(56vw, 240px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.loading-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgb(138 180 255 / 0.75);
+  opacity: 0;
+  transform: scale(0.6);
+  animation: loading-ring 1.6s ease-out infinite;
+  animation-delay: calc(var(--i) * 0.4s);
+}
+
+@keyframes loading-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* Durgun "nefes" modu (5 sn sonra) ve azaltılmış hareket: halkalar sabit durur. */
+.loading-screen[data-motion='calm'] .loading-ring,
+.loading-screen[data-motion='reduced'] .loading-ring {
+  animation: none;
+  opacity: calc(0.7 - var(--i) * 0.15);
+  transform: scale(calc(0.7 + var(--i) * 0.22));
+}
+
+.loading-counter {
+  position: relative;
+  font-size: clamp(36px, 11vw, 52px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.loading-route {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #9aa0b4;
+}
+
+.loading-status {
+  max-width: 360px;
+}
+
+.loading-title {
+  margin: 8px 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.loading-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.loading-steps li {
+  position: relative;
+  padding-left: 24px;
+  color: #6b7186;
+}
+
+.loading-steps li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.45em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+
+.loading-steps li[data-state='done'] {
+  color: #9aa0b4;
+}
+
+.loading-steps li[data-state='done']::before {
+  content: '✓';
+  border: 0;
+  width: auto;
+  height: auto;
+  top: 0;
+  left: 2px;
+  color: #4ade80;
+}
+
+.loading-steps li[data-state='current'] {
+  color: #e6e8f0;
+  font-weight: 600;
+}
+
+.loading-steps li[data-state='current']::before {
+  background: #8ab4ff;
+  border-color: #8ab4ff;
+}
+
+.loading-long {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: #f5b84b;
+}
+
+.loading-elapsed {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #9aa0b4;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tek hareketli öğe: geçen süreye göre dolan ince çizgi (35 sn = dolu). */
+.loading-progress {
+  width: min(70vw, 280px);
+  height: 3px;
+  border-radius: 2px;
+  background: #1c2033;
+  overflow: hidden;
+}
+
+.loading-progress span {
+  display: block;
+  height: 100%;
+  background: #8ab4ff;
+  transform-origin: left center;
+  transition: transform 1s linear;
+}
+
+.loading-cancel {
+  margin-top: 12px;
+  min-height: 44px;
+  min-width: 140px;
+  padding: 10px 20px;
+  font: inherit;
+  font-size: 15px;
+  color: #e6e8f0;
+  background: #1c2033;
+  border: 1px solid #2c3250;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.loading-cancel:focus-visible {
+  outline: 2px solid #8ab4ff;
+  outline-offset: 2px;
+}
+
+.loading-screen[data-motion='reduced'] .loading-progress span {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-ring {
+    animation: none;
+    opacity: calc(0.7 - var(--i) * 0.15);
+    transform: scale(calc(0.7 + var(--i) * 0.22));
+  }
+  .loading-progress span {
+    transition: none;
+  }
+}
