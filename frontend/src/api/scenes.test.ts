@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createScene, getScene, sanitizeResult, sanitizeStage, SceneTimeoutError, waitForScene, type Scene, type SceneStatus } from './scenes'
+import { apiErrorMessage, BUSY_MESSAGE } from './errorMessages'
+import {
+  ApiError,
+  createScene,
+  getScene,
+  retryAfterSeconds,
+  sanitizeResult,
+  sanitizeStage,
+  SceneTimeoutError,
+  waitForScene,
+  type Scene,
+  type SceneStatus,
+} from './scenes'
 
 const req = { year: -44, latitude: 41.9, longitude: 12.5 }
 
@@ -246,5 +258,223 @@ describe('waitForScene', () => {
     ctrl.abort()
     await expect(waitForScene('s1', { signal: ctrl.signal })).rejects.toMatchObject({ name: 'AbortError' })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+const busy = (retryAfter?: string) =>
+  new Response(JSON.stringify({ error: 'too many active jobs' }), {
+    status: 503,
+    headers: retryAfter === undefined ? { 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json', 'Retry-After': retryAfter },
+  })
+
+describe('retryAfterSeconds', () => {
+  const now = Date.parse('Sun, 06 Nov 1994 08:49:30 GMT')
+
+  it('tam sayı saniyeyi alır, [1, 30] aralığına kırpar', () => {
+    expect(retryAfterSeconds('2', now)).toBe(2)
+    expect(retryAfterSeconds(' 7 ', now)).toBe(7)
+    expect(retryAfterSeconds('30', now)).toBe(30)
+    expect(retryAfterSeconds('60', now)).toBe(30)
+    expect(retryAfterSeconds('0', now)).toBe(1)
+  })
+  it('başlık yoksa ya da geçersizse 5 sn', () => {
+    for (const h of [null, undefined, '', 'abc', '-3', '2.5', '1e2', 'Sunday, 06-Nov-94 08:49:37 GMT']) {
+      expect(retryAfterSeconds(h, now)).toBe(5)
+    }
+  })
+  it('IMF-fixdate tarihini kalan süreye çevirir', () => {
+    expect(retryAfterSeconds('Sun, 06 Nov 1994 08:49:37 GMT', now)).toBe(7)
+    expect(retryAfterSeconds('Sun, 06 Nov 1994 09:49:30 GMT', now)).toBe(30)
+    expect(retryAfterSeconds('Sun, 06 Nov 1994 08:00:00 GMT', now)).toBe(1)
+  })
+})
+
+describe('createScene 503 yeniden deneme', () => {
+  async function expectRetryAfter(header: string | undefined, waitSec: number) {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(busy(header))
+      .mockResolvedValueOnce(json(scene('PENDING'), 202))
+    vi.stubGlobal('fetch', fetchMock)
+    const onRetryWait = vi.fn()
+    const p = createScene(req, { onRetryWait })
+    await vi.advanceTimersByTimeAsync(waitSec * 1000 - 1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onRetryWait).toHaveBeenCalledWith(waitSec, 1)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(p).resolves.toMatchObject({ status: 'PENDING' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/scenes')
+    expect(fetchMock.mock.calls[1][1].method).toBe('POST')
+  }
+
+  it('Retry-After: 2 → 2 sn bekleyip yeniden dener', () => expectRetryAfter('2', 2))
+  it('başlık yoksa 5 sn bekler', () => expectRetryAfter(undefined, 5))
+  it('geçersiz başlıkta 5 sn bekler', () => expectRetryAfter('soon', 5))
+  it('60 sn 30 sn ile sınırlanır', () => expectRetryAfter('60', 30))
+
+  it('3 yeniden denemeden sonra hâlâ 503 ise ApiError(503) fırlatır', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => busy('1'))
+    vi.stubGlobal('fetch', fetchMock)
+    const onRetryWait = vi.fn()
+    const p = createScene(req, { onRetryWait })
+    const caught = p.catch((e) => e)
+    await vi.advanceTimersByTimeAsync(10_000)
+    const err = await caught
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err).toMatchObject({ status: 503, message: 'too many active jobs' })
+    expect(apiErrorMessage(err.status, err.message)).toBe(BUSY_MESSAGE)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(onRetryWait.mock.calls).toEqual([
+      [1, 1],
+      [1, 2],
+      [1, 3],
+    ])
+  })
+
+  it('bekleme sırasında iptal edilince AbortError fırlatır ve yeniden istek atmaz', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => busy('5'))
+    vi.stubGlobal('fetch', fetchMock)
+    const ctrl = new AbortController()
+    const assertion = expect(createScene(req, { signal: ctrl.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.advanceTimersByTimeAsync(2000)
+    ctrl.abort()
+    await assertion
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('202 gelince durur', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(busy('1'))
+      .mockResolvedValueOnce(json(scene('PENDING'), 202))
+      .mockImplementation(async () => busy('1'))
+    vi.stubGlobal('fetch', fetchMock)
+    const p = createScene(req)
+    await vi.advanceTimersByTimeAsync(1000)
+    await expect(p).resolves.toMatchObject({ id: 's1', status: 'PENDING' })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('400 yeniden denenmez', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => json({ error: 'location outside supported area' }, 400))
+    vi.stubGlobal('fetch', fetchMock)
+    const onRetryWait = vi.fn()
+    await expect(createScene(req, { onRetryWait })).rejects.toMatchObject({ status: 400 })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onRetryWait).not.toHaveBeenCalled()
+  })
+
+  it('500 yeniden denenmez', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => json({ error: 'boom' }, 500))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(createScene(req)).rejects.toMatchObject({ status: 500 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('onRetryWait her beklemeden önce, istekler arasında sırayla çağrılır', async () => {
+    const events: string[] = []
+    const responses = [busy('3'), busy('1'), json(scene('PENDING'), 202)]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        events.push('fetch')
+        return responses.shift()
+      }),
+    )
+    const p = createScene(req, { onRetryWait: (sec, attempt) => events.push(`wait:${sec}:${attempt}`) })
+    await vi.advanceTimersByTimeAsync(4000)
+    await p
+    expect(events).toEqual(['fetch', 'wait:3:1', 'fetch', 'wait:1:2', 'fetch'])
+  })
+
+  it('503 sonrası bekleme deneme başına zaman aşımına sayılmaz', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(busy('2'))
+      .mockResolvedValueOnce(json(scene('PENDING'), 202))
+    vi.stubGlobal('fetch', fetchMock)
+    const p = createScene(req, { timeoutMs: 1000 })
+    await vi.advanceTimersByTimeAsync(2000)
+    await expect(p).resolves.toMatchObject({ status: 'PENDING' })
+  })
+})
+
+describe('waitForScene 503', () => {
+  it('503 gelince Retry-After kadar bekleyip aynı kimlikle yoklamaya devam eder', async () => {
+    const ready = scene('READY', { result: { panoramaUrl: '/p.png', depthUrl: '/d.png' } })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json(scene('PENDING')))
+      .mockResolvedValueOnce(busy('2'))
+      .mockResolvedValueOnce(json(scene('RUNNING')))
+      .mockResolvedValueOnce(json(ready))
+    vi.stubGlobal('fetch', fetchMock)
+    const onRetryWait = vi.fn()
+    const seen: SceneStatus[] = []
+    const p = waitForScene('s1', { intervalMs: 100, timeoutMs: 120_000, retryOnBusy: true, onRetryWait, onStatus: (s) => seen.push(s) })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(onRetryWait).toHaveBeenCalledWith(2, 1)
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(101)
+    const result = await p
+    expect(result.status).toBe('READY')
+    expect(seen).toEqual(['PENDING', 'RUNNING', 'READY'])
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(Array(4).fill('/api/scenes/s1'))
+  })
+
+  it('art arda 503 sayacı başarılı yanıtta sıfırlanır', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(busy('1'))
+      .mockResolvedValueOnce(busy('1'))
+      .mockResolvedValueOnce(json(scene('RUNNING')))
+      .mockResolvedValueOnce(busy('1'))
+      .mockResolvedValueOnce(json(scene('READY')))
+    vi.stubGlobal('fetch', fetchMock)
+    const onRetryWait = vi.fn()
+    const p = waitForScene('s1', { intervalMs: 100, retryOnBusy: true, onRetryWait })
+    await vi.advanceTimersByTimeAsync(5000)
+    await expect(p).resolves.toMatchObject({ status: 'READY' })
+    expect(onRetryWait.mock.calls).toEqual([
+      [1, 1],
+      [1, 2],
+      [1, 1],
+    ])
+  })
+
+  it('503 sürerse toplam zaman aşımında SceneTimeoutError fırlatır', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => busy('5'))
+    vi.stubGlobal('fetch', fetchMock)
+    const assertion = expect(waitForScene('s1', { timeoutMs: 120_000, retryOnBusy: true })).rejects.toBeInstanceOf(SceneTimeoutError)
+    await vi.advanceTimersByTimeAsync(120_000)
+    await assertion
+    expect(fetchMock).toHaveBeenCalledTimes(24)
+  })
+
+  it('503 beklemesinde iptal edilince AbortError fırlatır ve yoklamayı durdurur', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => busy('5'))
+    vi.stubGlobal('fetch', fetchMock)
+    const ctrl = new AbortController()
+    const assertion = expect(waitForScene('s1', { signal: ctrl.signal, retryOnBusy: true })).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.advanceTimersByTimeAsync(1000)
+    ctrl.abort()
+    await assertion
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('retryOnBusy verilmezse 503 eskisi gibi ApiError(503) olur', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => busy('1'))
+    vi.stubGlobal('fetch', fetchMock)
+    const onRetryWait = vi.fn()
+    await expect(waitForScene('s1', { onRetryWait })).rejects.toMatchObject({ name: 'ApiError', status: 503 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onRetryWait).not.toHaveBeenCalled()
   })
 })
