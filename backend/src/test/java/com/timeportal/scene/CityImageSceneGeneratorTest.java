@@ -17,6 +17,7 @@ import com.timeportal.image.CityImage;
 import com.timeportal.image.CityImageFinder;
 import com.timeportal.image.FindOutcome;
 import com.timeportal.image.ImageKind;
+import com.timeportal.period.PeriodBucket;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -31,6 +32,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -227,7 +229,10 @@ class CityImageSceneGeneratorTest {
 		SceneResult a = g.generate(istanbul(2026));
 		SceneResult b = g.generate(new SceneRequest(-44, 41.05, 28.99));
 
-		assertThat(b).isEqualTo(a);
+		// Görsel ilçeye bağlı; dönem istekteki yıldan gelir (#61).
+		assertThat(b.withPeriod(null)).isEqualTo(a.withPeriod(null));
+		assertThat(a.period().id()).isEqualTo("bugun");
+		assertThat(b.period().id()).isEqualTo("helenistik");
 		assertThat(fakes.finds).hasValue(1);
 		assertThat(fakes.fetches).hasValue(1);
 		assertThat(fakes.estimates).hasValue(1);
@@ -417,5 +422,73 @@ class CityImageSceneGeneratorTest {
 		assertThatThrownBy(() -> generator().generate(new SceneRequest(2026, 10, 10)))
 			.isInstanceOf(IllegalStateException.class);
 		assertThat(fakes.finds).hasValue(0);
+	}
+
+	// --- #61: dönem ve aşamalar ---
+
+	@Test
+	void periodIsFilledFromTheRequestYear() {
+		SceneResult r = generator().generate(istanbul(1453));
+
+		assertThat(r.period()).isEqualTo(new ScenePeriod("osmanli-klasik", "Osmanlı klasik", 1453, 1700,
+				PeriodBucket.Confidence.YORUM));
+	}
+
+	@Test
+	void ownerReportsAllStagesInOrderAndCacheHitOnlyLocating() {
+		CityImageSceneGenerator g = generator();
+		List<SceneStage> first = new CopyOnWriteArrayList<>();
+		List<SceneStage> second = new CopyOnWriteArrayList<>();
+
+		g.generate(istanbul(2026), first::add);
+		g.generate(istanbul(1900), second::add);
+
+		assertThat(first).containsExactly(SceneStage.LOCATING, SceneStage.IMAGE_SEARCH, SceneStage.DEPTH,
+				SceneStage.PACKAGING);
+		assertThat(second).containsExactly(SceneStage.LOCATING);
+	}
+
+	@Test
+	void stageListenerFailureDoesNotBreakGeneration() {
+		SceneResult r = generator().generate(istanbul(2026), stage -> {
+			throw new IllegalStateException("dinleyici bozuk");
+		});
+
+		assertThat(r.kind()).isEqualTo("panorama");
+	}
+
+	@Test
+	void waiterMirrorsTheOwnersCurrentAndLaterStages() throws Exception {
+		fakes.findGate = new CountDownLatch(1);
+		CityImageSceneGenerator g = generator();
+		List<SceneStage> ownerStages = new CopyOnWriteArrayList<>();
+		List<SceneStage> waiterStages = new CopyOnWriteArrayList<>();
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			Future<SceneResult> owner = pool.submit(() -> g.generate(istanbul(2026), ownerStages::add));
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			while (!ownerStages.contains(SceneStage.IMAGE_SEARCH) && System.nanoTime() < deadline) {
+				Thread.sleep(5);
+			}
+			Future<SceneResult> waiter = pool.submit(() -> g.generate(istanbul(1453), waiterStages::add));
+			while (!waiterStages.contains(SceneStage.IMAGE_SEARCH) && System.nanoTime() < deadline) {
+				Thread.sleep(5);
+			}
+			fakes.findGate.countDown();
+
+			SceneResult o = owner.get(10, TimeUnit.SECONDS);
+			SceneResult w = waiter.get(10, TimeUnit.SECONDS);
+			assertThat(ownerStages).containsExactly(SceneStage.LOCATING, SceneStage.IMAGE_SEARCH, SceneStage.DEPTH,
+					SceneStage.PACKAGING);
+			assertThat(waiterStages).containsExactly(SceneStage.LOCATING, SceneStage.IMAGE_SEARCH, SceneStage.DEPTH,
+					SceneStage.PACKAGING);
+			assertThat(w.panoramaUrl()).isEqualTo(o.panoramaUrl());
+			assertThat(o.period().id()).isEqualTo("bugun");
+			assertThat(w.period().id()).isEqualTo("osmanli-klasik");
+		}
+		finally {
+			pool.shutdownNow();
+		}
+		assertThat(fakes.finds).hasValue(1);
 	}
 }

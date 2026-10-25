@@ -9,13 +9,18 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SceneJobServiceTest {
 
@@ -394,5 +399,143 @@ class SceneJobServiceTest {
 		new SceneJobService(request -> RESULT, borrowed, null, Clock.systemUTC(), TTL, 1, 10).shutdown();
 		assertThat(borrowed.isShutdown()).isFalse();
 		borrowed.shutdown();
+	}
+
+	// --- #61: kurgu dönem kovaları ve aşamalar ---
+
+	@ParameterizedTest
+	@ValueSource(ints = {-100000, -10001, -10000, -3001, 2030, 2199, 2200, 100000})
+	void fictionalPeriodFailsWithoutCallingTheGenerator(int year) {
+		AtomicInteger calls = new AtomicInteger();
+		SceneJobService service = new SceneJobService(request -> {
+			calls.incrementAndGet();
+			return RESULT;
+		}, executor);
+
+		SceneJob created = service.create(new SceneRequest(year, 41.0, 29.0));
+		executor.runNext();
+
+		SceneJob failed = service.find(created.id()).orElseThrow();
+		assertThat(failed.status()).isEqualTo(SceneStatus.FAILED);
+		assertThat(failed.error()).isEqualTo(SceneJobService.NO_SCENE_FOR_PERIOD).isEqualTo("no scene for period");
+		assertThat(failed.result()).isNull();
+		assertThat(failed.stage()).isNull();
+		assertThat(failed.finishedAt()).isNotNull();
+		assertThat(calls).hasValue(0);
+		assertThat(service.availableSlots()).isEqualTo(4);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = {-3000, -1200, -44, 1, 1453, 2000, 2026, 2029})
+	void nonFictionalPeriodsStillCallTheGenerator(int year) {
+		AtomicInteger calls = new AtomicInteger();
+		SceneJobService service = new SceneJobService(request -> {
+			calls.incrementAndGet();
+			return RESULT;
+		}, executor);
+
+		SceneJob created = service.create(new SceneRequest(year, 41.0, 29.0));
+		executor.runNext();
+
+		assertThat(service.find(created.id()).orElseThrow().status()).isEqualTo(SceneStatus.READY);
+		assertThat(calls).hasValue(1);
+	}
+
+	/** Aşamaları sırayla bildiren ve her bildirimden sonra işin aşamasını kaydeden sahte üretici. */
+	static class StagedGenerator implements SceneGenerator {
+		final List<SceneStage> seen = new ArrayList<>();
+		final List<SceneStatus> statuses = new ArrayList<>();
+		SceneJobService service;
+		String id;
+		StageListener captured;
+
+		@Override
+		public SceneResult generate(SceneRequest request) {
+			throw new AssertionError("stage-aware overload must be used");
+		}
+
+		@Override
+		public SceneResult generate(SceneRequest request, StageListener listener) {
+			captured = listener;
+			SceneJob before = service.find(id).orElseThrow();
+			statuses.add(before.status());
+			seen.add(before.stage());
+			for (SceneStage stage : SceneStage.values()) {
+				listener.onStage(stage);
+				seen.add(service.find(id).orElseThrow().stage());
+			}
+			return RESULT;
+		}
+	}
+
+	@Test
+	void stagesReportedByTheGeneratorAreWrittenToTheRunningJobInOrder() {
+		StagedGenerator generator = new StagedGenerator();
+		SceneJobService service = new SceneJobService(generator, executor);
+		generator.service = service;
+
+		SceneJob created = service.create(REQUEST);
+		assertThat(created.stage()).isNull();
+		generator.id = created.id();
+		executor.runNext();
+
+		assertThat(generator.statuses).containsExactly(SceneStatus.RUNNING);
+		assertThat(generator.seen).containsExactly(null, SceneStage.LOCATING, SceneStage.IMAGE_SEARCH,
+				SceneStage.DEPTH, SceneStage.PACKAGING);
+		SceneJob done = service.find(created.id()).orElseThrow();
+		assertThat(done.status()).isEqualTo(SceneStatus.READY);
+		assertThat(done.stage()).isNull();
+	}
+
+	@Test
+	void lateStageNotificationAfterTheJobFinishedIsIgnored() {
+		StagedGenerator generator = new StagedGenerator();
+		SceneJobService service = new SceneJobService(generator, executor);
+		generator.service = service;
+		SceneJob created = service.create(REQUEST);
+		generator.id = created.id();
+		executor.runNext();
+
+		generator.captured.onStage(SceneStage.DEPTH);
+
+		SceneJob done = service.find(created.id()).orElseThrow();
+		assertThat(done.status()).isEqualTo(SceneStatus.READY);
+		assertThat(done.stage()).isNull();
+	}
+
+	@Test
+	void stageIsClearedWhenTheJobFails() {
+		SceneJobService service = new SceneJobService(new SceneGenerator() {
+			@Override
+			public SceneResult generate(SceneRequest request) {
+				throw new AssertionError();
+			}
+
+			@Override
+			public SceneResult generate(SceneRequest request, StageListener listener) {
+				listener.onStage(SceneStage.IMAGE_SEARCH);
+				throw new NoImageFoundException();
+			}
+		}, executor);
+
+		SceneJob created = service.create(REQUEST);
+		executor.runNext();
+
+		SceneJob failed = service.find(created.id()).orElseThrow();
+		assertThat(failed.status()).isEqualTo(SceneStatus.FAILED);
+		assertThat(failed.error()).isEqualTo("no image found for location");
+		assertThat(failed.stage()).isNull();
+	}
+
+	@Test
+	void stageCanOnlyBeSetWhileRunning() {
+		SceneJob pending = SceneJob.pending("a", REQUEST, Instant.EPOCH);
+		assertThatThrownBy(() -> pending.atStage(SceneStage.DEPTH)).isInstanceOf(IllegalStateException.class);
+		SceneJob running = pending.running().atStage(SceneStage.DEPTH);
+		assertThat(running.stage()).isEqualTo(SceneStage.DEPTH);
+		assertThat(running.ready(RESULT, Instant.EPOCH).stage()).isNull();
+		assertThat(running.failed("x", Instant.EPOCH).stage()).isNull();
+		assertThatThrownBy(() -> new SceneJob("b", REQUEST, SceneStatus.READY, RESULT, null, Instant.EPOCH,
+				Instant.EPOCH, SceneStage.DEPTH)).isInstanceOf(IllegalArgumentException.class);
 	}
 }

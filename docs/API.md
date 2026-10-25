@@ -35,6 +35,7 @@ Yanıt `202 Accepted`, `Location: /api/scenes/{id}`:
 {
   "id": "5b0c…",
   "status": "PENDING",
+  "stage": null,
   "request": {"year": 2026, "latitude": 41.0369, "longitude": 28.985},
   "result": null,
   "error": null,
@@ -53,9 +54,26 @@ Hatalar: `400` (geçersiz ya da eksik alan; ayrıca konum Türkiye ilçe sınır
 | `PENDING` | Sırada | `null` | `null` |
 | `RUNNING` | Üretiliyor | `null` | `null` |
 | `READY` | Hazır | dolu | `null` |
-| `FAILED` | Başarısız | `null` | `no image found for location` ya da `generation failed` |
+| `FAILED` | Başarısız | `null` | `no scene for period`, `no image found for location` ya da `generation failed` |
 
-`FAILED` mesajları: `no image found for location` konum için hiçbir adımda açık lisanslı görsel bulunamadığında istemciye gider (beklenen durum). Diğer tüm hatalarda genel `generation failed` döner; iç ayrıntı istemciye verilmez, yalnızca sunucu logunda tutulur.
+`FAILED` mesajları:
+
+- `no scene for period`: yıl kurgu bir dönem kovasında (aşağıda `period.confidence = kurgu`: Paleolitik, Neolitik, Yakın gelecek, Uzak gelecek). Sahne üretilmez, görsel araması da yapılmaz; iş hemen `RUNNING`'den `FAILED`'e geçer (karar 7A). Arayüz: "Bu dönem için sahne henüz yok."
+- `no image found for location`: konum için hiçbir adımda açık lisanslı görsel bulunamadı (beklenen durum).
+- `generation failed`: diğer tüm hatalar; iç ayrıntı istemciye verilmez, yalnızca sunucu logunda tutulur.
+
+### `stage` — çalışan işin aşaması
+
+```json
+"stage": "LOCATING" | "IMAGE_SEARCH" | "DEPTH" | "PACKAGING" | null
+```
+
+Yalnızca `RUNNING` iken dolu olabilir; `PENDING`, `READY`, `FAILED`'de her zaman `null`. Sıra: `LOCATING` (konum → ilçe) → `IMAGE_SEARCH` (görsel arama ve indirme) → `DEPTH` (derinlik çıkarımı) → `PACKAGING` (saklama, sonucun kurulması). Notlar:
+
+- `RUNNING`'e geçişle ilk bildirim arasında kısa süre `null` olabilir.
+- Önbellekten dönen sonuçta aşamalar atlanabilir (gerçek üreticide yalnızca `LOCATING` görünür, ardından `READY`).
+- Aynı ilçe için süren bir hesabı bekleyen iş, kendi işini değil o hesabın (sahibinin) aşamasını gösterir.
+- İstemci aşamaları geri gitmeyen bir ilerleme olarak gösterebilir; ara aşamalar sorgu aralığına göre görünmeyebilir.
 
 Geçişler: `PENDING → RUNNING → READY | FAILED`. İstemci `READY` ya da `FAILED` olana kadar kısa aralıklarla sorgular. Gerçek üreticide ilk istek ilçe görseli aramasıyla ve (ilk kez) model indirmesiyle onlarca saniye sürebilir; aynı ilçe sonraki isteklerde önbellekten hemen döner.
 
@@ -67,6 +85,7 @@ Geçişler: `PENDING → RUNNING → READY | FAILED`. İstemci `READY` ya da `FA
   "depthUrl": "/api/artifacts/f09d7150caeb3ca4-depth.png",
   "kind": "panorama",
   "place": {"province": "İstanbul", "district": "Beyoğlu"},
+  "period": {"id": "osmanli-klasik", "name": "Osmanlı klasik", "yearFrom": 1453, "yearTo": 1700, "confidence": "yorum"},
   "attribution": {
     "author": "Ali Veli",
     "license": "CC BY-SA 4.0",
@@ -82,6 +101,7 @@ Geçişler: `PENDING → RUNNING → READY | FAILED`. İstemci `READY` ya da `FA
 - `kind`: `"panorama"` | `"photo"`.
 - `place`: konumun ilçesi ve ili; bilinmiyorsa `null`.
 - `attribution`: görsel atfı (lisans gereği gösterilmelidir). `provider`: `"mapillary"` | `"wikimedia-commons"` | `"sample"` (örnek yapıtlar). `licenseUrl` bilinmiyorsa `null` olabilir. `attribution` bilinmiyorsa `null`.
+- `period`: istekteki yılın dönem kovası (tablo: `docs/FAZ3.md` §2). `yearFrom` dahil, `yearTo` hariç; yıl 0 yoktur. `confidence`: `"gercek"` (Bugün, 2000–2029: 2026 görünümü) | `"yorum"` (Tunç Çağı … 20. yüzyıl sonu: dönem sahneleri üretilene kadar **bugünkü** sahne döner, `period` seçilen dönemi taşır; arayüz "Şimdilik 2026 görünümü; <Dönem adı> sahnesi hazırlanıyor" notu gösterir) | `"kurgu"` (bu kovalarda iş `no scene for period` ile `FAILED` olur, `READY` sonucunda görünmez). Eski sürüm sonuçlarında `null` olabilir.
 - Adresler sunucuya göre köke bağlıdır, doğrudan yüklenebilir.
 - Panorama genişliği en çok 4096 px, fotoğrafın uzun kenarı en çok 2048 px'tir.
 
@@ -91,4 +111,4 @@ Gerçek üreticinin indirdiği görsel ve derinlik PNG'leri. Mapillary adresleri
 
 ## Örnek yapıtlar
 
-`timeportal.generator=fake` iken (geliştirme ve CI) her istek aynı örnekleri döner: `/api/samples/sample-pano.png`, `/api/samples/sample-depth.png` (1024×512). Yol `/api` altında olduğu için geliştirmede proxy'den geçer.
+`timeportal.generator=fake` iken (geliştirme ve CI) her istek aynı örnekleri döner (`period` yine istekteki yıldan dolar; kurgu kovalar yine `no scene for period` ile `FAILED` olur; aşamalar sırayla bildirilir, `timeportal.fake-generator.delay-ms` verilirse aşamalara eşit bölünür): `/api/samples/sample-pano.png`, `/api/samples/sample-depth.png` (1024×512). Yol `/api` altında olduğu için geliştirmede proxy'den geçer.
