@@ -11,21 +11,21 @@ gh issue list --label karar      # senden bekleyen kararlar
 gh issue list --label engelli    # ajanın takıldığı işler
 ```
 
-## Fazlar (18.10.2026, #26)
+## Fazlar (25.10.2026)
 
-Faz etiketleri `F1`–`F5`. Eski `faz-2` / `faz-3` yalnızca kapanmış işlerde. Bir faz içinde sıra öncelik etiketine göredir (`P0` → `P3`).
+Faz etiketleri `F1`–`F5`. Bir faz içinde sıra öncelik etiketine göredir (`P0` → `P3`).
 
 ```bash
-gh issue list --label F1-türkiye-2026   # şu anki faz
+gh issue list --label F2-araştırma   # şu anki faz
+gh issue list --label karar          # senden bekleyen kararlar
 ```
 
 | Faz | Kapsam | Issue'lar |
 |---|---|---|
-| **F1 Türkiye 2026** | Yıl seç → Türkiye'de konum → sahne oluştur → (şimdilik 2026) → şehir → şehir merkezi görseli → 3B | #37 karar, #38 harita, #39 şehir bulma, #40 görsel bulma, #41 3B üretici, #42 API + arayüz |
-| **F2 Deneyim** | Görüntüleyici ve arayüz iyileştirmeleri | #5 derinlikli hareket, #27 OpenFreeMap, #33 503 mesajı |
-| **F3 Zaman** | Seçilen yılın yorumu, kendi üreticimiz | #26, #36 |
-| **F4 Dünya** | Türkiye dışına genişleme | #34 |
-| **F5 Yayın** | Kota, içerik güvenliği, barındırma | #11, #12 |
-| Altyapı | Orkestrasyon | #13 |
+| **F1 Türkiye 2026** (tamamlandı) | Yıl seç → Türkiye'de konum → ilçe → ilçe merkezi görseli → derinlik → 360° / 2.5B | #37–#42, #44, #45, #49 (kapalı) |
+| **F2 Araştırma** | Harita (MapLibre mi?), sahne üretim yöntemi (API'siz), çok sayfalı akış tasarımı. Rapor: `docs/arastirma/faz2-arastirma-raporu.md` | #54, #55, #56; karar #57 |
+| **F3 Akış** | Çok sayfalı akış: 1) yıl seçimi (animasyonlu), 2) harita (il/ilçe, sınırlar, vurgu), 3) tam ekran 3B sahne. Faz 1'den taşınan küçük işler (#56'da listeli) | #57 kararından sonra açılır |
+| **F4 Dünya** | Türkiye dışına genişleme | sonra |
+| **F5 Yayın** | Kota, içerik güvenliği, barındırma | sonra |
 
-Kapalı (eski fazlar): #1–#4, #6, #7, #9, #10, #19, #24 ve kararlar #14–#17, #20. #8'in yerini #41 aldı.
+Eski F2/F3 issue'ları (#5, #11, #12, #26, #27, #33, #34, #36, #53) 25.10.2026'da silindi; içerikleri #54–#56'ya taşındı. Kapalı: #1–#4, #6–#10, #13, #19, #24 ve kararlar #14–#17, #20, #37.

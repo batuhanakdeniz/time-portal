@@ -17,7 +17,7 @@ Kullanıcı siteye girince bir **zaman çizgisi** görür ve bir tarih seçer. A
 5. O şehrin merkezine ait açık lisanslı bir görsel bulunur.
 6. Görsel derinlik tahminiyle 3B'ye çevrilir.
 
-Karar #37 (**1B 2A 3D 4C 5A**): ilçe düzeyi (~970 ilçe), ilçe sınırları depoda (çevrimdışı), görsel Mapillary 360° → Wikimedia Commons (ücretsiz Mapillary anahtarı #44), panorama varsa 360°, yoksa 2.5B fotoğraf (#45), derinlik backend'de ONNX Runtime + Depth Anything V2 Small. Fazlar: `docs/BACKLOG.md`. Seçilen yılın yorumu (geçmiş/gelecek) Faz 3'te (#26).
+Karar #37 (**1B 2A 3D 4C 5A**): ilçe düzeyi (~970 ilçe), ilçe sınırları depoda (çevrimdışı), görsel Mapillary 360° → Wikimedia Commons (ücretsiz Mapillary anahtarı #44), panorama varsa 360°, yoksa 2.5B fotoğraf (#45), derinlik backend'de ONNX Runtime + Depth Anything V2 Small. Fazlar: `docs/BACKLOG.md`. Seçilen yılın yorumu Faz 2 araştırmasıyla (#55) yönlendirilecek.
 
 ## Kararlar
 
@@ -30,8 +30,8 @@ Karar #37 (**1B 2A 3D 4C 5A**): ilçe düzeyi (~970 ilçe), ilçe sınırları d
 - **Önbellek:** Aynı (yaklaşık konum hücresi, tarih dilimi) için sonuç yeniden üretilmez.
 - **API sözleşmesi:** Elle yazılan `docs/API.md` (karar #14). Yıl negatifse MÖ, yıl 0 yoktur.
 - **Zaman çizgisi:** Yatay, kaydırılıp yakınlaştırılan, doğrusal olmayan ölçekli çizgi (karar #15). MÖ/MS gösterimi tek yardımcıdan (`frontend/src/lib/year.ts`).
-- **Konum seçici:** Düz harita, MapLibre GL JS (karar #16). Karolar: anahtarsız **OpenFreeMap** (karar #20, uygulama #27); OpenStreetMap atfı görünür olmalı.
-- **Ücretli servis yok (karar #17):** Panorama, derinlik ve sahne tarifi için ücretli API kullanılmaz. Üretici ileride açık kaynak araçlarla kendimiz yazılacak (#26); o zamana kadar `FakeSceneGenerator` kullanılır. Sahne tarifi kural tabanlı (`RuleBasedPromptComposer`, #9); LLM ileride aynı arayüzün arkasına takılabilir.
+- **Konum seçici:** Düz harita, MapLibre GL JS (karar #16). Karolar: karar #20 OpenFreeMap idi; Faz 2 araştırması (#54) altlıksız (karo yok) haritayı öneriyor, karar #57'de. OpenStreetMap/ODbL atfı her durumda görünür olmalı.
+- **Ücretli servis yok (karar #17):** Panorama, derinlik ve sahne tarifi için ücretli API kullanılmaz. Gerçek üretici Faz 1'de yazıldı (#41: ilçe görseli + ONNX derinlik). Dönem sahneleri için yöntem araştırması #55'te, karar #57'de. Sahne tarifi kural tabanlı (`RuleBasedPromptComposer`, #9); LLM ileride aynı arayüzün arkasına takılabilir.
 - **Önbellek konumu:** Üreticinin önünde sarmalayıcı (`CachingSceneGenerator`, #10); iş servisi değişmez.
 
 ## Orkestrasyon kararları
@@ -74,7 +74,7 @@ tarih + konum
 Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 1. Verilenler: API sözleşmesi #14, zaman çizgisi #15, konum seçici #16, ücretli servis yok #17, OpenFreeMap #20 (yukarıdaki Kararlar bölümünde)
-2. Kendi üreticimizin yaklaşımı ve zamanı: #26
+2. Dönem sahnesi üretim yolu, harita yaklaşımı ve çok sayfalı akış: #57 (rapor: `docs/arastirma/faz2-arastirma-raporu.md`)
 3. Henüz issue'su olmayanlar: barındırma ve yapıt depolama, kimlik doğrulama gerekecek mi, tarihsel doğruluk uyarısı metni, kota eşikleri (#11), moderasyon yaklaşımı (#12).
 
 ## Riskler
@@ -86,16 +86,16 @@ Cevaplar GitHub'da, `karar` etiketli issue'larda: `gh issue list --label karar`
 
 ## Sıradaki adım
 
-Güncel durum her zaman GitHub'da: `gh issue list --label F2-deneyim`, `gh pr list`.
+Güncel durum her zaman GitHub'da: `gh issue list --label karar`, `gh issue list --label F3-akış`, `gh pr list`.
 
-**Faz 1 tamamlandı (25.10.2026).** Akış uçtan uca çalışıyor: Türkiye'de konum → ilçe → ilçe merkezi görseli (Mapillary 360° ya da Commons fotoğrafı) → derinlik → 360° ya da 2.5B görünüm. Ekranda ilçe/il, "2026 görünümü" notu, atıf (yazar, lisans, kaynak, ODbL) ve Türkçe hatalar var. Issue'lar: #37–#42, #44, #45, #49.
+**Faz 1 tamamlandı (25.10.2026).** Akış uçtan uca çalışıyor: Türkiye'de konum → ilçe → ilçe merkezi görseli (Mapillary 360° ya da Commons fotoğrafı) → derinlik → 360° ya da 2.5B görünüm; ilçe/il, "2026 görünümü" notu, atıf ve Türkçe hatalar ekranda.
 
-Sıradaki, Faz 2 (deneyim):
-1. #53: 2.5B görüntüleyici gerçek fotoğraflarda ince nesneleri bozuyor (P1).
-2. #5: derinlikli hareket (derinlik ölçeği notu issue'da), #33 (503 yeniden deneme), #27 (OpenFreeMap).
+**Faz 2 (araştırma) raporu hazır:** `docs/arastirma/faz2-arastirma-raporu.md`. Özet: harita için altlıksız MapLibre (prototip çalıştı); sahne üretimi için dönem kovaları × il, çevrimdışı yerel üretim + gerçek arazi, canlıda API yok; akış için üç sayfa ve "höyük kesiti" yıl ekranı. 8 karar #57'de.
 
-Orkestrasyon: routine durduruldu (#13 sonrası karar C). Mac mini bridge ortamı çalışmaları almadı. İşler orkestratör oturumundan elle yürütülüyor; bulut ortamına geçiş Faz 2 sonrası değerlendirilecek.
+**Faz 3 (akış)** #57 cevaplanınca açılır: yönlendirme + 3 sayfa iskeleti → altlıksız harita → yıl ekranı → tam ekran sahne + yükleme (`stage` alanı) → üretim pilotu (20 sahne) → ikinci karar turu → toplu üretim.
+
+Orkestrasyon: routine durduruldu (#13 sonrası karar C); işler orkestratör oturumundan elle yürütülüyor. Bulut ortamına geçiş Faz 3'te değerlendirilecek.
 
 Yerelde gerçek üretici: `timeportal.generator=city-image` (varsayılan), Mapillary için `MAPILLARY_TOKEN` ortam değişkeni. Model ilk istekte indirilir (`backend/MODELS.md`). Testler ve CI `fake` kullanır.
 
-Açık sahip kararları: Mapillary logosu (şartlar md. 11; şimdilik yalnızca metin bağlantısı), #26 (Faz 3 yöntemi), #11/#12 (yayın öncesi).
+Açık sahip kararları: #57 (Faz 3 yönü), Mapillary logosu (şartlar md. 11; şimdilik yalnızca metin bağlantısı), yayın öncesi kota/içerik güvenliği (#56'da not).
