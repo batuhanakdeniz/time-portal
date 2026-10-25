@@ -17,7 +17,9 @@ import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -36,12 +38,22 @@ import org.slf4j.LoggerFactory;
  * İlk gerçek üretici (#41): konum → ilçe ({@link DistrictLocator}) → ilçe merkezi görseli
  * ({@link CityImageFinder}) → indir ve sakla → derinlik ({@link DepthPipeline}) → sonuç.
  *
- * <p>Sonuç yalnızca ilçeye bağlıdır (yıl şimdilik yok sayılır). İlçe başına yapıtlar önbelleğe alınır
+ * <p>Görsel yalnızca ilçeye bağlıdır (yıl şimdilik yalnızca {@code period} için kullanılır). İlçe başına yapıtlar önbelleğe alınır
  * ve aynı ilçeye eşzamanlı gelen istekler tek aramaya/çıkarıma bağlanır (ilçe başına
  * {@link CompletableFuture}, single-flight). Hata önbelleğe alınmaz: başarısız hesap girdisi silinir,
  * sonraki istek yeniden dener; o anda bekleyenler aynı istisnayı alır. Arama "geçici hata" bildirdiyse
  * ({@link FindOutcome#degraded()}) sonuç kısa süre ({@code degradedTtl}) tutulur. Diskten silinmiş
  * yapıtlı girdi geçersiz sayılır ve yeniden hesaplanır.
+ *
+ * <p><b>Dönem:</b> önbellek ilçe başınadır ve yıldan bağımsızdır; {@code period} her çağrıda istekteki
+ * yıldan sonuca eklenir (önbellekteki sonuç dönemsizdir).
+ *
+ * <p><b>Aşamalar:</b> {@link SceneStage} sırasıyla bildirilir: konum bulunurken {@code LOCATING},
+ * görsel arama ve indirme {@code IMAGE_SEARCH}, derinlik çıkarımı {@code DEPTH}, derinliğin saklanması
+ * ve sonucun kurulması {@code PACKAGING}. Önbellekten dönen sonuçta yalnızca {@code LOCATING}
+ * bildirilir. Aynı ilçenin süren hesabını bekleyen istek (single-flight) önce sahibin o anki aşamasını,
+ * sonra sahibin sonraki aşamalarını alır; yani bekleyenin aşaması kendi işini değil sahibin işini
+ * yansıtır. Bekleyen zaman aşımına uğrarsa dinleyicisi bırakılır.
  */
 public class CityImageSceneGenerator implements SceneGenerator {
 
@@ -56,6 +68,28 @@ public class CityImageSceneGenerator implements SceneGenerator {
 	private static final class Entry {
 		final CompletableFuture<Computed> future = new CompletableFuture<>();
 		volatile Instant expiresAt = Instant.MAX;
+		/** Sahibin son aşaması ve bekleyenlerin dinleyicileri; ikisi de {@code this} ile korunur. */
+		private SceneStage stage = SceneStage.LOCATING;
+		private final List<StageListener> waiters = new ArrayList<>();
+
+		/** Sahip yeni aşamaya geçti: kendi dinleyicisine ve bekleyenlere bildir. */
+		synchronized void advance(SceneStage next, StageListener owner) {
+			stage = next;
+			notifySafely(owner, next);
+			for (StageListener waiter : waiters) {
+				notifySafely(waiter, next);
+			}
+		}
+
+		/** Bekleyeni ekler ve sahibin o anki aşamasını ona bildirir. */
+		synchronized void join(StageListener waiter) {
+			waiters.add(waiter);
+			notifySafely(waiter, stage);
+		}
+
+		synchronized void leave(StageListener waiter) {
+			waiters.remove(waiter);
+		}
 	}
 
 	private final DistrictLocator locator;
@@ -94,6 +128,13 @@ public class CityImageSceneGenerator implements SceneGenerator {
 
 	@Override
 	public SceneResult generate(SceneRequest request) {
+		return generate(request, StageListener.NONE);
+	}
+
+	@Override
+	public SceneResult generate(SceneRequest request, StageListener listener) {
+		ScenePeriod period = ScenePeriod.ofYear(request.year());
+		notifySafely(listener, SceneStage.LOCATING);
 		District district = locator.locate(request.latitude(), request.longitude())
 			.orElseThrow(() -> new IllegalStateException("location outside supported area"));
 		String key = district.province() + "|" + district.name();
@@ -106,14 +147,23 @@ public class CityImageSceneGenerator implements SceneGenerator {
 			return new Entry();
 		});
 		if (!owner[0]) {
-			return await(entry.future, waitTimeout).result();
+			if (entry.future.isDone()) {
+				return await(entry.future, waitTimeout).result().withPeriod(period);
+			}
+			entry.join(listener);
+			try {
+				return await(entry.future, waitTimeout).result().withPeriod(period);
+			}
+			finally {
+				entry.leave(listener);
+			}
 		}
 		try {
-			Computed computed = compute(district);
+			Computed computed = compute(district, stage -> entry.advance(stage, listener));
 			entry.expiresAt = clock.instant().plus(computed.degraded() ? degradedTtl : ttl);
 			entry.future.complete(computed);
 			trim();
-			return computed.result();
+			return computed.result().withPeriod(period);
 		}
 		catch (Throwable t) {
 			entries.remove(key, entry);
@@ -138,8 +188,9 @@ public class CityImageSceneGenerator implements SceneGenerator {
 		return url.substring(ARTIFACT_PREFIX.length());
 	}
 
-	private Computed compute(District district) {
+	private Computed compute(District district, StageListener stages) {
 		long t0 = System.nanoTime();
+		stages.onStage(SceneStage.IMAGE_SEARCH);
 		FindOutcome outcome = finder.findDetailed(district);
 		CityImage found = outcome.image().orElseThrow(NoImageFoundException::new);
 		long t1 = System.nanoTime();
@@ -160,7 +211,9 @@ public class CityImageSceneGenerator implements SceneGenerator {
 			ext = "jpg";
 		}
 		String imageName = store.saveImage(bytes, ext);
+		stages.onStage(SceneStage.DEPTH);
 		byte[] depthPng = pipeline.depthPng(image, panorama);
+		stages.onStage(SceneStage.PACKAGING);
 		String depthName = store.saveDepth(imageName, depthPng);
 		long t3 = System.nanoTime();
 		log.info("Scene for {}/{}: kind={} {}x{} search={}ms download={}ms depth={}ms", district.province(),
@@ -170,6 +223,16 @@ public class CityImageSceneGenerator implements SceneGenerator {
 				panorama ? SceneResult.KIND_PANORAMA : SceneResult.KIND_PHOTO,
 				new SceneResult.Place(district.province(), district.name()), toAttribution(found));
 		return new Computed(result, outcome.degraded());
+	}
+
+	/** Dinleyici hatası üretimi bozmasın. */
+	private static void notifySafely(StageListener listener, SceneStage stage) {
+		try {
+			listener.onStage(stage);
+		}
+		catch (RuntimeException e) {
+			log.warn("Stage listener failed at {}", stage, e);
+		}
 	}
 
 	static SceneResult.Attribution toAttribution(CityImage image) {

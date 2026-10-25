@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.timeportal.scene.SceneGenerator;
 import com.timeportal.scene.SceneRequest;
 import com.timeportal.scene.SceneResult;
+import com.timeportal.scene.ScenePeriod;
+import com.timeportal.scene.SceneStage;
+import com.timeportal.scene.StageListener;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -204,5 +207,55 @@ class CachingSceneGeneratorTest {
 	void rejectsNonPositiveSize() {
 		assertThatThrownBy(() -> new CachingSceneGenerator(new CountingGenerator(), 0))
 				.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	// --- #61: dönem ve aşama ---
+
+	/** Dönemi istekten dolduran ve aşama bildiren sahte delege. */
+	static class PeriodGenerator implements SceneGenerator {
+		final AtomicInteger calls = new AtomicInteger();
+
+		@Override
+		public SceneResult generate(SceneRequest request) {
+			return generate(request, StageListener.NONE);
+		}
+
+		@Override
+		public SceneResult generate(SceneRequest request, StageListener listener) {
+			calls.incrementAndGet();
+			listener.onStage(SceneStage.LOCATING);
+			return new SceneResult("/p.png", "/d.png").withPeriod(ScenePeriod.ofYear(request.year()));
+		}
+	}
+
+	@Test
+	void cachedResultGetsThePeriodOfTheRequestEvenAcrossABucketBoundary() {
+		PeriodGenerator delegate = new PeriodGenerator();
+		CachingSceneGenerator cache = new CachingSceneGenerator(delegate, 10);
+
+		// 1452 ve 1453 aynı on yıllık dilimde, farklı dönem kovalarında.
+		SceneResult first = cache.generate(req(1452));
+		SceneResult second = cache.generate(req(1453));
+		SceneResult third = cache.generate(req(1451));
+
+		assertThat(delegate.calls).hasValue(1);
+		assertThat(first.period().id()).isEqualTo("selcuklu");
+		assertThat(second.period().id()).isEqualTo("osmanli-klasik");
+		assertThat(second.panoramaUrl()).isEqualTo(first.panoramaUrl());
+		assertThat(third).isSameAs(first);
+	}
+
+	@Test
+	void stageListenerReachesTheDelegateOnlyWhenItGenerates() {
+		PeriodGenerator delegate = new PeriodGenerator();
+		CachingSceneGenerator cache = new CachingSceneGenerator(delegate, 10);
+		List<SceneStage> miss = new java.util.ArrayList<>();
+		List<SceneStage> hit = new java.util.ArrayList<>();
+
+		cache.generate(req(2026), miss::add);
+		cache.generate(req(2026), hit::add);
+
+		assertThat(miss).containsExactly(SceneStage.LOCATING);
+		assertThat(hit).isEmpty();
 	}
 }

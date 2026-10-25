@@ -144,4 +144,77 @@ class SceneControllerTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error").value("location outside supported area"));
 	}
+
+	// --- #61: stage ve period alanları ---
+
+	private String awaitFinished(String id) throws Exception {
+		long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+		String json = "";
+		while (System.nanoTime() < deadline) {
+			json = mockMvc.perform(get("/api/scenes/" + id)).andExpect(status().isOk())
+					.andReturn().getResponse().getContentAsString();
+			String state = JsonPath.read(json, "$.status");
+			if ("READY".equals(state) || "FAILED".equals(state)) {
+				return json;
+			}
+			Thread.sleep(20);
+		}
+		return json;
+	}
+
+	@Test
+	void readyResultCarriesPeriodAndKeepsTheOldFieldsWhileStageIsNull() throws Exception {
+		String response = mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
+						.content(body(1453, 41.0369, 28.985)))
+				.andExpect(status().isAccepted())
+				.andExpect(jsonPath("$.status").value("PENDING"))
+				.andExpect(jsonPath("$.stage").hasJsonPath())
+				.andExpect(jsonPath("$.stage").value(org.hamcrest.Matchers.nullValue()))
+				.andReturn().getResponse().getContentAsString();
+		String id = JsonPath.read(response, "$.id");
+
+		String json = awaitFinished(id);
+		assertThat((String) JsonPath.read(json, "$.status")).isEqualTo("READY");
+
+		mockMvc.perform(get("/api/scenes/" + id))
+				.andExpect(jsonPath("$.stage").hasJsonPath())
+				.andExpect(jsonPath("$.stage").value(org.hamcrest.Matchers.nullValue()))
+				.andExpect(jsonPath("$.result.period.id").value("osmanli-klasik"))
+				.andExpect(jsonPath("$.result.period.name").value("Osmanlı klasik"))
+				.andExpect(jsonPath("$.result.period.yearFrom").value(1453))
+				.andExpect(jsonPath("$.result.period.yearTo").value(1700))
+				.andExpect(jsonPath("$.result.period.confidence").value("yorum"))
+				.andExpect(jsonPath("$.result.panoramaUrl").value("/api/samples/sample-pano.png"))
+				.andExpect(jsonPath("$.result.depthUrl").value("/api/samples/sample-depth.png"))
+				.andExpect(jsonPath("$.result.kind").value("panorama"))
+				.andExpect(jsonPath("$.result.place.district").value("Beyoğlu"))
+				.andExpect(jsonPath("$.result.attribution.provider").value("sample"));
+	}
+
+	@Test
+	void todayIsMarkedAsRealConfidence() throws Exception {
+		String response = mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
+						.content(body(2026, 39.92, 32.85)))
+				.andReturn().getResponse().getContentAsString();
+		String json = awaitFinished(JsonPath.read(response, "$.id"));
+
+		assertThat((String) JsonPath.read(json, "$.result.period.id")).isEqualTo("bugun");
+		assertThat((String) JsonPath.read(json, "$.result.period.confidence")).isEqualTo("gercek");
+	}
+
+	@Test
+	void fictionalPeriodFailsWithNoSceneForPeriod() throws Exception {
+		String response = mockMvc.perform(post("/api/scenes").contentType(MediaType.APPLICATION_JSON)
+						.content(body(2150, 39.92, 32.85)))
+				.andExpect(status().isAccepted())
+				.andReturn().getResponse().getContentAsString();
+		String id = JsonPath.read(response, "$.id");
+
+		String json = awaitFinished(id);
+		assertThat((String) JsonPath.read(json, "$.status")).isEqualTo("FAILED");
+		mockMvc.perform(get("/api/scenes/" + id))
+				.andExpect(jsonPath("$.error").value("no scene for period"))
+				.andExpect(jsonPath("$.result").value(org.hamcrest.Matchers.nullValue()))
+				.andExpect(jsonPath("$.stage").value(org.hamcrest.Matchers.nullValue()));
+	}
 }

@@ -3,6 +3,8 @@ package com.timeportal.scene;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.timeportal.geo.District;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -30,5 +32,24 @@ class FakeSceneGeneratorTest {
 		assertThat(r.place()).isNull();
 		assertThat(r.kind()).isEqualTo("panorama");
 		assertThat(r.attribution()).isNotNull();
+	}
+
+	@Test
+	void periodComesFromTheRequestYear() {
+		FakeSceneGenerator fake = new FakeSceneGenerator(0, (lat, lon) -> Optional.empty());
+
+		assertThat(fake.generate(new SceneRequest(-1200, 0, 0)).period().id()).isEqualTo("demir");
+		assertThat(fake.generate(new SceneRequest(2026, 0, 0)).period().confidence().json()).isEqualTo("gercek");
+	}
+
+	@Test
+	void reportsAllStagesInOrder() {
+		FakeSceneGenerator fake = new FakeSceneGenerator(4, (lat, lon) -> Optional.empty());
+		List<SceneStage> stages = new ArrayList<>();
+
+		fake.generate(new SceneRequest(2026, 0, 0), stages::add);
+
+		assertThat(stages).containsExactly(SceneStage.LOCATING, SceneStage.IMAGE_SEARCH, SceneStage.DEPTH,
+				SceneStage.PACKAGING);
 	}
 }

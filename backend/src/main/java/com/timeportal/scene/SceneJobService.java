@@ -1,6 +1,8 @@
 package com.timeportal.scene;
 
 import jakarta.annotation.PreDestroy;
+import com.timeportal.period.PeriodBucket;
+import com.timeportal.period.PeriodTable;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,11 +34,17 @@ import org.springframework.stereotype.Service;
  * (finishedAt'e göre) silinir; bellek yalnızca zamanla değil sayıyla da sınırlıdır. Boyut kontrolü
  * ucuzdur, tam tarama yalnızca sınır aşılınca yapılır ve sınırın %10 altına kadar budar (amortize).
  * PENDING/RUNNING işler asla silinmez.
+ *
+ * <p>Kurgu dönem kovasındaki yıllarda ({@link PeriodBucket#isFictional()}) üretici hiç çağrılmaz; iş
+ * {@value #NO_SCENE_FOR_PERIOD} ile FAILED olur. Üreticinin bildirdiği aşamalar ({@link SceneStage})
+ * işe yazılır; yalnızca iş RUNNING iken geçerlidir, sonra gelen bildirim yok sayılır.
  */
 @Service
 public class SceneJobService {
 
 	static final String GENERIC_FAILURE = "generation failed";
+	/** Kurgu dönem kovası (tarih öncesi, gelecek): sahne üretilmez (karar 7A). */
+	public static final String NO_SCENE_FOR_PERIOD = "no scene for period";
 	static final int RETRY_AFTER_SECONDS = 5;
 	static final int SWEEP_INTERVAL_SECONDS = 30;
 
@@ -180,11 +188,17 @@ public class SceneJobService {
 			if (running == null) {
 				return;
 			}
+			if (PeriodTable.bucketOf(running.request().year()).isFictional()) {
+				// Karar 7A: tarih öncesi ve gelecek için sahne yok; görsel araması da yapılmaz.
+				log.info("No scene for the period of job {} (year {})", id, running.request().year());
+				jobs.computeIfPresent(id, (key, job) -> job.failed(NO_SCENE_FOR_PERIOD, clock.instant()));
+				return;
+			}
 			SceneResult result = null;
 			boolean failed = false;
 			String failure = GENERIC_FAILURE;
 			try {
-				result = generator.generate(running.request());
+				result = generator.generate(running.request(), stage -> updateStage(id, stage));
 			}
 			catch (Throwable e) {
 				// Error türevleri de dahil: iş asla RUNNING'de takılı kalmamalı.
@@ -211,6 +225,14 @@ public class SceneJobService {
 		finally {
 			release(released);
 		}
+	}
+
+	/** Aşamayı işe yazar; iş artık RUNNING değilse (geç gelen bildirim) yok sayar. */
+	private void updateStage(String id, SceneStage stage) {
+		if (stage == null) {
+			return;
+		}
+		jobs.computeIfPresent(id, (key, job) -> job.status() == SceneStatus.RUNNING ? job.atStage(stage) : job);
 	}
 
 	@PreDestroy

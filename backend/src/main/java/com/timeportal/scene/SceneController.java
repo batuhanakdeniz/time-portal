@@ -38,16 +38,19 @@ public class SceneController {
 		}
 	}
 
+	/** {@code stage} yalnızca RUNNING iken dolu, diğer durumlarda {@code null} (docs/API.md). */
 	public record SceneJobView(
 			String id,
 			SceneStatus status,
+			SceneStage stage,
 			SceneRequest request,
 			SceneResult result,
 			String error,
 			Instant createdAt) {
 
 		static SceneJobView of(SceneJob job) {
-			return new SceneJobView(job.id(), job.status(), job.request(), job.result(), job.error(),
+			SceneStage stage = job.status() == SceneStatus.RUNNING ? job.stage() : null;
+			return new SceneJobView(job.id(), job.status(), stage, job.request(), job.result(), job.error(),
 					job.createdAt());
 		}
 	}
